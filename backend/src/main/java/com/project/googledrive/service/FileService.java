@@ -9,6 +9,7 @@ import com.project.googledrive.model.FileMetadata;
 import com.project.googledrive.repository.FileRepository;
 import com.project.googledrive.util.EncryptionUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FileService {
@@ -27,6 +29,7 @@ public class FileService {
     private final FileRepository fileRepository;
     private final AmazonS3 amazonS3;
     private final OpenAIService openAIService;
+    private final ClaudeService claudeService;
     private final KeywordExtractionService keywordExtractionService;
     private final DocumentSummaryService documentSummaryService;
     
@@ -96,19 +99,16 @@ public class FileService {
                     
                     // Generate embedding
                     embedding = openAIService.generateEmbedding(textForEmbedding);
-                    System.out.println("✅ Generated embedding for: " + originalFileName);
-                    
-                    // Extract keywords
+                    log.info("Generated embedding for: {}", originalFileName);
+
                     keywords = keywordExtractionService.extractKeywords(extractedText);
-                    System.out.println("✅ Extracted keywords for: " + originalFileName + " → " + keywords);
-                    
-                    // Generate summary
+                    log.info("Extracted keywords for: {} -> {}", originalFileName, keywords);
+
                     summary = documentSummaryService.generateSummary(extractedText);
-                    System.out.println("✅ Generated summary for: " + originalFileName);
+                    log.info("Generated summary for: {}", originalFileName);
                 }
             } catch (Exception e) {
-                System.err.println("Failed to generate NLP features for " + originalFileName + ": " + e.getMessage());
-                // Continue without NLP features - file still uploads successfully
+                log.warn("NLP processing failed for {}, uploading without AI features: {}", originalFileName, e.getMessage());
             }
         }
         // Images don't get any NLP processing
@@ -147,7 +147,7 @@ public class FileService {
             String text = tika.parseToString(new ByteArrayInputStream(fileData));
             return text != null ? text.trim() : "";
         } catch (Exception e) {
-            System.err.println("Text extraction failed: " + e.getMessage());
+            log.error("Text extraction failed: {}", e.getMessage());
             return "";
         }
     }
@@ -246,10 +246,38 @@ public class FileService {
         return fileRepository.save(metadata);
     }
 
+    public String answerFromDocuments(String query, String userEmail) throws Exception {
+        List<Double> queryEmbedding = openAIService.generateEmbedding(query);
+        List<FileMetadata> allFiles = getUserFiles(userEmail);
+
+        List<String> relevantSummaries = allFiles.stream()
+                .filter(f -> f.getEmbedding() != null && !f.getEmbedding().isEmpty())
+                .filter(f -> openAIService.calculateSimilarity(queryEmbedding, f.getEmbedding()) > 0.72)
+                .sorted((a, b) -> Double.compare(
+                        openAIService.calculateSimilarity(queryEmbedding, b.getEmbedding()),
+                        openAIService.calculateSimilarity(queryEmbedding, a.getEmbedding())))
+                .limit(3)
+                .filter(f -> f.getSummary() != null && !f.getSummary().isEmpty())
+                .map(f -> "Document: " + f.getOriginalFileName() + "\nSummary: " + f.getSummary())
+                .toList();
+
+        if (relevantSummaries.isEmpty()) {
+            return null;
+        }
+
+        String context = String.join("\n\n", relevantSummaries);
+        String prompt = "Based on these document summaries, answer the user's question concisely in 2-3 sentences.\n\n"
+                + context + "\n\nQuestion: " + query;
+
+        return claudeService.chat(
+                "You are a helpful document assistant. Answer questions based only on the provided document summaries. Be concise and specific.",
+                prompt,
+                200
+        );
+    }
+
     public List<FileMetadata> getSharedFiles(String userEmail) {
-        return fileRepository.findAll().stream()
-                .filter(file -> file.getSharedWith().contains(userEmail))
-                .collect(Collectors.toList());
+        return fileRepository.findBySharedWithContaining(userEmail);
     }
     
     // Rename File

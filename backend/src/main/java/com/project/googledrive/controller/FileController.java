@@ -102,6 +102,21 @@ public class FileController {
         }
     }
 
+    // AI Answer — returns a Claude-generated answer from relevant document summaries
+    @GetMapping("/search/ai/answer")
+    public ResponseEntity<String> aiAnswer(
+            @RequestParam String query,
+            Authentication authentication) {
+        try {
+            String userEmail = authentication.getName();
+            String answer = fileService.answerFromDocuments(query, userEmail);
+            if (answer == null) return ResponseEntity.noContent().build();
+            return ResponseEntity.ok(answer);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     // AI Search
     @GetMapping("/search/ai")
     public ResponseEntity<List<FileMetadata>> aiSearch(

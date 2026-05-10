@@ -91,11 +91,17 @@
             <version>1.12.529</version>
         </dependency>
 
-        <!-- OpenAI API -->
+        <!-- OpenAI API (used for embeddings only) -->
         <dependency>
             <groupId>com.theokanning.openai-gpt3-java</groupId>
             <artifactId>service</artifactId>
             <version>0.18.2</version>
+        </dependency>
+
+        <!-- Anthropic Claude API (HTTP client) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
         <!-- Apache Tika for PDF text extraction -->

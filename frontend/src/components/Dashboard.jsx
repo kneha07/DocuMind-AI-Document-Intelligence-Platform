@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { fileService } from '../services/api';
@@ -6,7 +6,8 @@ import {
     Box, Typography, Button, Paper, AppBar, Toolbar, List, ListItem,
     ListItemIcon, ListItemText, Avatar, IconButton, Alert, CircularProgress,
     TextField, InputAdornment, Drawer, Fab, Menu, MenuItem, Chip, Divider,
-    Dialog, DialogTitle, DialogContent, DialogActions, ButtonGroup
+    Dialog, DialogTitle, DialogContent, DialogActions, ButtonGroup,
+    Select, FormControl, InputLabel
 } from '@mui/material';
 import {
     CloudUpload, Download, Delete, Logout, InsertDriveFile, Dashboard as DashboardIcon,
@@ -14,13 +15,30 @@ import {
     MoreVert, Add, Share, Email, FilterList, Sort, CalendarToday, ViewList, ViewModule, Edit,
     SmartToy, ExpandMore
 } from '@mui/icons-material';
-import logo from '../assets/logo.png';
+import logo from '../assets/logo.svg';
 
 const DRAWER_WIDTH = 280;
+
+const C = {
+    primary:     '#0369a1',
+    dark:        '#075985',
+    accent:      '#0ea5e9',
+    accentFab:   '#0ea5e9',
+    accentFabHover: '#0284c7',
+    bg:          '#f8fafc',
+    surface:     '#ffffff',
+    border:      '#e2e8f0',
+    textPrimary: '#0f172a',
+    textSecondary: '#64748b',
+    tint:        '#e0f2fe',
+    shadow:      'rgba(3, 105, 161, 0.12)',
+    shadowHover: 'rgba(3, 105, 161, 0.22)',
+};
 
 const Dashboard = () => {
     const { user, logout } = useContext(AuthContext);
     const navigate = useNavigate();
+    const fileInputRef = useRef(null);
     const [files, setFiles] = useState([]);
     const [newFileName, setNewFileName] = useState('');
     const [loading, setLoading] = useState(false);
@@ -32,6 +50,7 @@ const Dashboard = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchMode, setSearchMode] = useState('normal'); // 'normal' or 'ai'
     const [aiSearching, setAiSearching] = useState(false);
+    const [aiAnswer, setAiAnswer] = useState('');
     const [anchorEl, setAnchorEl] = useState(null);
     const [selectedFile, setSelectedFile] = useState(null);
     const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -47,6 +66,16 @@ const Dashboard = () => {
     const [sortBy, setSortBy] = useState('newest');
     const [viewMode, setViewMode] = useState(localStorage.getItem('viewMode') || 'grid');
     const [expandedFiles, setExpandedFiles] = useState(new Set()); // Track which files are expanded
+    const [isDragging, setIsDragging] = useState(false);
+    const [previewFile, setPreviewFile] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState(null);
+    const [activityFeed, setActivityFeed] = useState([]);
+    const [chatOpen, setChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState([
+        { role: 'ai', text: 'Hi! Ask me anything about your documents.' }
+    ]);
+    const [chatInput, setChatInput] = useState('');
+    const [chatLoading, setChatLoading] = useState(false);
 
     useEffect(() => {
         loadFiles();
@@ -54,9 +83,9 @@ const Dashboard = () => {
 
     // ADD THIS NEW useEffect:
     useEffect(() => {
-        // When search query is cleared, reload all files
         if (searchQuery === '' && searchMode === 'ai') {
             loadFiles();
+            setAiAnswer('');
         }
     }, [searchQuery]);
 
@@ -82,15 +111,24 @@ const Dashboard = () => {
         }
 
         setAiSearching(true);
+        setAiAnswer('');
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch(`http://localhost:8080/api/files/search/ai?query=${encodeURIComponent(searchQuery)}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            const results = await response.json();
+            const headers = { 'Authorization': `Bearer ${token}` };
+
+            const [searchRes, answerRes] = await Promise.all([
+                fetch(`http://localhost:8080/api/files/search/ai?query=${encodeURIComponent(searchQuery)}`, { headers }),
+                fetch(`http://localhost:8080/api/files/search/ai/answer?query=${encodeURIComponent(searchQuery)}`, { headers }),
+            ]);
+
+            const results = await searchRes.json();
             setFiles(results);
+
+            if (answerRes.ok && answerRes.status !== 204) {
+                const answer = await answerRes.text();
+                setAiAnswer(answer);
+            }
+
             if (results.length === 0) {
                 setError('No matching documents found. Try a different query!');
             }
@@ -147,7 +185,8 @@ const Dashboard = () => {
                     new Date(b.uploadedAt) - new Date(a.uploadedAt)
                 ));
 
-                setSuccess(`✨ File "${file.name}" uploaded successfully!`);
+                setSuccess(`File "${file.name}" uploaded successfully.`);
+                addActivity('Uploaded', file.name, 'upload');
                 setUploadProgress(0);
                 setUploadingFileName('');
             }, 500);
@@ -166,6 +205,49 @@ const Dashboard = () => {
         event.target.value = '';
     };
 
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+            setIsDragging(false);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileUpload(file);
+    };
+
+    const handleChatSend = async () => {
+        if (!chatInput.trim() || chatLoading) return;
+        const question = chatInput.trim();
+        setChatInput('');
+        setChatMessages(prev => [...prev, { role: 'user', text: question }]);
+        setChatLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(
+                `http://localhost:8080/api/files/search/ai/answer?query=${encodeURIComponent(question)}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (res.ok && res.status !== 204) {
+                const answer = await res.text();
+                setChatMessages(prev => [...prev, { role: 'ai', text: answer }]);
+            } else {
+                setChatMessages(prev => [...prev, { role: 'ai', text: "I couldn't find relevant information in your documents for that question." }]);
+            }
+        } catch {
+            setChatMessages(prev => [...prev, { role: 'ai', text: 'Something went wrong. Please try again.' }]);
+        } finally {
+            setChatLoading(false);
+        }
+    };
+
     const handleMenuOpen = (event, file) => {
         setAnchorEl(event.currentTarget);
         setSelectedFile(file);
@@ -176,16 +258,20 @@ const Dashboard = () => {
         setSelectedFile(null);
     };
 
+    const addActivity = (action, fileName, icon) => {
+        const entry = { action, fileName, icon, time: new Date() };
+        setActivityFeed(prev => [entry, ...prev].slice(0, 20));
+    };
+
     const handleOpenFile = async (file) => {
         try {
             const response = await fileService.downloadFile(file.id);
             const blob = new Blob([response.data], { type: file.fileType || 'application/octet-stream' });
             const url = window.URL.createObjectURL(blob);
-
-            if (file.fileType?.includes('image') || file.fileType?.includes('pdf')) {
-                window.open(url, '_blank');
-            } else if (file.fileType?.includes('text')) {
-                window.open(url, '_blank');
+            if (file.fileType?.includes('image') || file.fileType?.includes('pdf') || file.fileType?.includes('text')) {
+                setPreviewFile(file);
+                setPreviewUrl(url);
+                addActivity('Previewed', file.originalFileName, 'preview');
             } else {
                 const link = document.createElement('a');
                 link.href = url;
@@ -194,6 +280,7 @@ const Dashboard = () => {
                 link.click();
                 link.remove();
                 window.URL.revokeObjectURL(url);
+                addActivity('Downloaded', file.originalFileName, 'download');
             }
         } catch (err) {
             setError('Failed to open file');
@@ -210,7 +297,7 @@ const Dashboard = () => {
             document.body.appendChild(link);
             link.click();
             link.remove();
-            setSuccess('📥 File downloaded successfully!');
+            setSuccess('File downloaded successfully.');
         } catch (err) {
             setError('Failed to download file');
         }
@@ -232,7 +319,8 @@ const Dashboard = () => {
             // Remove the deleted file from state (no reload)
             setFiles(prevFiles => prevFiles.filter(file => file.id !== fileToDelete.id));
 
-            setSuccess('🗑️ File deleted successfully!');
+            setSuccess('File deleted successfully.');
+            addActivity('Deleted', fileToDelete.originalFileName, 'delete');
         } catch (err) {
             setError('Failed to delete file');
         }
@@ -282,7 +370,8 @@ const Dashboard = () => {
             setAllFiles(updateFiles);
             setFiles(updateFiles);
 
-            setSuccess(`📤 File shared successfully with ${shareEmail}!`);
+            setSuccess(`File shared with ${shareEmail}.`);
+            addActivity('Shared', fileToShare.originalFileName, 'share');
         } catch (err) {
             // Don't reload on error, just show error message
             setError('Failed to share file. The user might already have access.');
@@ -317,7 +406,7 @@ const Dashboard = () => {
                 )
             );
 
-            setSuccess(`✏️ File renamed from "${oldName}" to "${newFileName}"!`);
+            setSuccess(`File renamed to "${newFileName}".`);
         } catch (err) {
             setError('Failed to rename file');
         }
@@ -329,10 +418,10 @@ const Dashboard = () => {
     };
 
     const getFileIcon = (fileType) => {
-        if (fileType?.includes('image')) return <Image sx={{ fontSize: 40, color: '#4CAF50' }} />;
-        if (fileType?.includes('pdf')) return <PictureAsPdf sx={{ fontSize: 40, color: '#F44336' }} />;
-        if (fileType?.includes('text')) return <Description sx={{ fontSize: 40, color: '#003566' }} />;
-        return <InsertDriveFile sx={{ fontSize: 40, color: '#9E9E9E' }} />;
+        if (fileType?.includes('image')) return <Image sx={{ fontSize: 40, color: '#10b981' }} />;
+        if (fileType?.includes('pdf')) return <PictureAsPdf sx={{ fontSize: 40, color: '#ef4444' }} />;
+        if (fileType?.includes('text')) return <Description sx={{ fontSize: 40, color: C.primary }} />;
+        return <InsertDriveFile sx={{ fontSize: 40, color: '#94a3b8' }} />;
     };
 
     const formatFileSize = (bytes) => {
@@ -347,10 +436,11 @@ const Dashboard = () => {
     };
 
     const getViewTitle = () => {
-        if (currentView === 'dashboard') return '📁 Recent Documents (Last 7 Days)';
-        if (currentView === 'myDocuments') return '📂 My Documents';
-        if (currentView === 'shared') return '👥 Shared with Me';
-        return '📁 Files';
+        if (currentView === 'dashboard') return 'Recent Documents';
+        if (currentView === 'myDocuments') return 'My Documents';
+        if (currentView === 'shared') return 'Shared with Me';
+        if (currentView === 'activity') return 'Activity Feed';
+        return 'Files';
     };
 
     const toggleFileExpand = (fileId) => {
@@ -447,7 +537,7 @@ const Dashboard = () => {
     const filteredFiles = getFilteredAndSortedFiles();
 
     return (
-        <Box sx={{ display: 'flex', height: '100vh', bgcolor: '#f0f2f5' }}>
+        <Box sx={{ display: 'flex', height: '100vh', bgcolor: C.bg }}>
             {/* Sidebar */}
             <Drawer
                 variant="permanent"
@@ -457,7 +547,7 @@ const Dashboard = () => {
                     '& .MuiDrawer-paper': {
                         width: DRAWER_WIDTH,
                         boxSizing: 'border-box',
-                        background: 'linear-gradient(180deg, #003566 0%, #001D3D 100%)',
+                        background: `linear-gradient(180deg, ${C.primary} 0%, ${C.dark} 100%)`,
                         color: 'white',
                         borderRight: 'none',
                         overflow: 'hidden',
@@ -466,22 +556,36 @@ const Dashboard = () => {
                     },
                 }}
             >
-                <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{
+                    p: 3,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    backdropFilter: 'blur(8px)',
+                    background: 'rgba(255,255,255,0.08)',
+                    borderBottom: '1px solid rgba(255,255,255,0.15)',
+                }}>
                     <img src={logo} alt="Logo" style={{ width: 40, height: 40 }} />
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'white' }}>
-                        Mini Google Drive
-                    </Typography>
+                    <Box>
+                        <Typography variant="h5" sx={{ fontWeight: 700, color: 'white', lineHeight: 1.1 }}>
+                            DocuMind
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(255,179,0,0.85)', fontWeight: 600, letterSpacing: 0.8, textTransform: 'uppercase', fontSize: '0.6rem' }}>
+                            AI Document Intelligence
+                        </Typography>
+                    </Box>
                 </Box>
 
-                <List sx={{ px: 2 }}>
+                <List sx={{ px: 2, flexGrow: 1 }}>
                     <ListItem
                         button
                         onClick={() => setCurrentView('dashboard')}
                         sx={{
                             borderRadius: 2,
                             mb: 1,
-                            bgcolor: currentView === 'dashboard' ? 'rgba(255, 179, 0, 0.25)' : 'transparent',
-                            '&:hover': { bgcolor: 'rgba(255, 179, 0, 0.35)' },
+                            bgcolor: currentView === 'dashboard' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                            borderLeft: currentView === 'dashboard' ? '3px solid white' : '3px solid transparent',
+                            '&:hover': { bgcolor: 'rgba(255,255,255,0.10)' },
                             cursor: 'pointer'
                         }}
                     >
@@ -503,8 +607,9 @@ const Dashboard = () => {
                         sx={{
                             borderRadius: 2,
                             mb: 1,
-                            bgcolor: currentView === 'myDocuments' ? 'rgba(255, 179, 0, 0.25)' : 'transparent',
-                            '&:hover': { bgcolor: 'rgba(255, 179, 0, 0.15)' },
+                            bgcolor: currentView === 'myDocuments' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                            borderLeft: currentView === 'myDocuments' ? '3px solid white' : '3px solid transparent',
+                            '&:hover': { bgcolor: 'rgba(255,255,255,0.10)' },
                             cursor: 'pointer'
                         }}
                     >
@@ -525,8 +630,9 @@ const Dashboard = () => {
                         onClick={() => setCurrentView('shared')}
                         sx={{
                             borderRadius: 2,
-                            bgcolor: currentView === 'shared' ? 'rgba(255, 179, 0, 0.25)' : 'transparent',
-                            '&:hover': { bgcolor: 'rgba(255, 179, 0, 0.15)' },
+                            bgcolor: currentView === 'shared' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                            borderLeft: currentView === 'shared' ? '3px solid white' : '3px solid transparent',
+                            '&:hover': { bgcolor: 'rgba(255,255,255,0.10)' },
                             cursor: 'pointer'
                         }}
                     >
@@ -541,16 +647,69 @@ const Dashboard = () => {
                             }}
                         />
                     </ListItem>
+
+                    <ListItem
+                        button
+                        onClick={() => setCurrentView('activity')}
+                        sx={{
+                            borderRadius: 2,
+                            mt: 1,
+                            bgcolor: currentView === 'activity' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                            borderLeft: currentView === 'activity' ? '3px solid white' : '3px solid transparent',
+                            '&:hover': { bgcolor: 'rgba(255,255,255,0.10)' },
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <ListItemIcon>
+                            <CalendarToday sx={{ color: 'white' }} />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary="Activity"
+                            primaryTypographyProps={{
+                                color: 'white',
+                                fontWeight: currentView === 'activity' ? 600 : 400
+                            }}
+                        />
+                        {activityFeed.length > 0 && (
+                            <Chip label={activityFeed.length} size="small" sx={{ bgcolor: C.accent, color: 'white', fontWeight: 700, height: 20, fontSize: '0.7rem' }} />
+                        )}
+                    </ListItem>
                 </List>
 
-                <Box sx={{ p: 3, mt: 4 }}>
+                {/* User profile section */}
+                <Box sx={{ px: 3, py: 2, mt: 'auto', borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Avatar
+                            sx={{
+                                background: 'rgba(255,255,255,0.2)',
+                                width: 36,
+                                height: 36,
+                                fontWeight: 700,
+                                fontSize: '0.95rem',
+                                border: '1.5px solid rgba(255,255,255,0.4)',
+                            }}
+                        >
+                            {(user?.firstName?.[0] || 'U').toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ overflow: 'hidden' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600, color: 'white', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {user?.firstName} {user?.lastName}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.65rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                                {user?.email}
+                            </Typography>
+                        </Box>
+                    </Box>
+                </Box>
+
+                <Box sx={{ p: 3 }}>
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 1, display: 'block', fontWeight: 600 }}>
-                        Storage
+                        AWS S3 Storage
                     </Typography>
                     <Box sx={{ bgcolor: 'rgba(255, 255, 255, 0.2)', height: 8, borderRadius: 4, mb: 1 }}>
                         <Box
                             sx={{
-                                bgcolor: '#FFB300',
+                                bgcolor: C.accent,
                                 height: 8,
                                 borderRadius: 4,
                                 width: `${Math.min((files.reduce((acc, f) => acc + f.fileSize, 0) / 15000000000) * 100, 100)}%`
@@ -558,7 +717,7 @@ const Dashboard = () => {
                         />
                     </Box>
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500 }}>
-                        {getTotalSize()} of 15 GB used
+                        {getTotalSize()} used · AES-256 encrypted
                     </Typography>
                 </Box>
             </Drawer>
@@ -570,6 +729,7 @@ const Dashboard = () => {
                     sx={{
                         background: 'white',
                         borderBottom: '1px solid #e8edf2',
+                        boxShadow: '0 2px 12px rgba(3,105,161,0.07)',
                     }}
                 >
                     <Toolbar sx={{ py: 1.5, px: 3 }}>
@@ -587,21 +747,21 @@ const Dashboard = () => {
                                 width: 600,
                                 '& .MuiOutlinedInput-root': {
                                     borderRadius: 8,
-                                    bgcolor: searchMode === 'ai' ? '#E3F2FD' : '#f7f9fc',
+                                    bgcolor: searchMode === 'ai' ? C.tint : C.bg,
                                     '& fieldset': {
-                                        borderColor: searchMode === 'ai' ? '#003566' : '#e8edf2',
+                                        borderColor: searchMode === 'ai' ? C.primary : '#e8edf2',
                                         borderWidth: searchMode === 'ai' ? 2 : 1
                                     },
-                                    '&:hover fieldset': { borderColor: '#003566' },
+                                    '&:hover fieldset': { borderColor: C.primary },
                                 }
                             }}
                             InputProps={{
                                 startAdornment: (
                                     <InputAdornment position="start">
                                         {searchMode === 'ai' ? (
-                                            <SmartToy sx={{ color: '#003566' }} />
+                                            <SmartToy sx={{ color: C.primary }} />
                                         ) : (
-                                            <Search sx={{ color: '#003566' }} />
+                                            <Search sx={{ color: C.primary }} />
                                         )}
                                     </InputAdornment>
                                 ),
@@ -615,9 +775,9 @@ const Dashboard = () => {
                                                     disabled={aiSearching}
                                                 >
                                                     {aiSearching ? (
-                                                        <CircularProgress size={20} sx={{ color: '#003566' }} />
+                                                        <CircularProgress size={20} sx={{ color: C.primary }} />
                                                     ) : (
-                                                        <Search sx={{ color: '#003566', fontSize: 20 }} />
+                                                        <Search sx={{ color: C.primary, fontSize: 20 }} />
                                                     )}
                                                 </IconButton>
                                             )}
@@ -629,20 +789,20 @@ const Dashboard = () => {
                                                     setSearchQuery('');
                                                 }}
                                                 sx={{
-                                                    background: searchMode === 'ai' ? 'transparent' : 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
-                                                    color: searchMode === 'ai' ? '#003566' : 'white',
+                                                    background: searchMode === 'ai' ? 'transparent' : `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
+                                                    color: searchMode === 'ai' ? C.primary : 'white',
                                                     fontWeight: 600,
                                                     fontSize: '0.8rem',
                                                     height: 28,
-                                                    border: searchMode === 'ai' ? '1.5px solid #003566' : 'none',
+                                                    border: searchMode === 'ai' ? `1.5px solid ${C.primary}` : 'none',
                                                     cursor: 'pointer',
                                                     transition: 'all 0.2s ease',
                                                     '&:hover': {
-                                                        background: searchMode === 'ai' ? '#E3F2FD' : 'linear-gradient(135deg, #001D3D 0%, #001D3D 100%)',
+                                                        background: searchMode === 'ai' ? C.tint : `linear-gradient(135deg, ${C.dark} 0%, ${C.dark} 100%)`,
                                                         transform: 'scale(1.05)',
                                                     },
                                                     '& .MuiChip-icon': {
-                                                        color: searchMode === 'ai' ? '#003566' : 'white',
+                                                        color: searchMode === 'ai' ? C.primary : 'white',
                                                         fontSize: 18
                                                     }
                                                 }}
@@ -655,6 +815,40 @@ const Dashboard = () => {
 
                         <Box sx={{ flexGrow: 1 }} />
 
+                        {/* Ask AI Button */}
+                        <Button
+                            onClick={() => setChatOpen(o => !o)}
+                            startIcon={<SmartToy sx={{ fontSize: 18 }} />}
+                            variant={chatOpen ? 'contained' : 'outlined'}
+                            size="small"
+                            sx={{
+                                mr: 2,
+                                borderRadius: 2.5,
+                                textTransform: 'none',
+                                fontWeight: 600,
+                                fontSize: '0.85rem',
+                                px: 2,
+                                py: 0.8,
+                                ...(chatOpen ? {
+                                    background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
+                                    color: 'white',
+                                    border: 'none',
+                                    boxShadow: `0 4px 12px ${C.shadow}`,
+                                } : {
+                                    borderColor: C.primary,
+                                    color: C.primary,
+                                    bgcolor: C.tint,
+                                    '&:hover': { bgcolor: '#bae6fd', borderColor: C.dark },
+                                }),
+                            }}
+                        >
+                            Ask AI
+                        </Button>
+
+                        <Typography variant="body2" sx={{ color: C.textSecondary, fontWeight: 500, mr: 2, fontSize: '0.82rem' }}>
+                            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                        </Typography>
+
                         <IconButton
                             onClick={(e) => {
                                 setAnchorEl(e.currentTarget);
@@ -663,7 +857,7 @@ const Dashboard = () => {
                         >
                             <Avatar
                                 sx={{
-                                    background: 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
+                                    background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
                                     width: 44,
                                     height: 44,
                                     fontWeight: 700,
@@ -723,12 +917,12 @@ const Dashboard = () => {
                             p: 3,
                             minWidth: 320,
                             borderRadius: 3,
-                            boxShadow: '0 8px 32px rgba(102, 126, 234, 0.3)',
+                            boxShadow: `0 8px 32px ${C.shadow}`,
                             background: 'white',
                         }}
                     >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                            <CloudUpload sx={{ color: '#003566', fontSize: 28 }} />
+                            <CloudUpload sx={{ color: C.primary, fontSize: 28 }} />
                             <Box sx={{ flex: 1 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 600, color: '#1d2129', mb: 0.5 }}>
                                     Uploading...
@@ -737,7 +931,7 @@ const Dashboard = () => {
                                     {uploadingFileName}
                                 </Typography>
                             </Box>
-                            <Typography variant="h6" sx={{ fontWeight: 700, color: '#003566' }}>
+                            <Typography variant="h6" sx={{ fontWeight: 700, color: C.primary }}>
                                 {uploadProgress}%
                             </Typography>
                         </Box>
@@ -749,7 +943,7 @@ const Dashboard = () => {
                                     top: 0,
                                     height: '100%',
                                     width: `${uploadProgress}%`,
-                                    background: 'linear-gradient(90deg, #003566 0%, #001D3D 100%)',
+                                    background: `linear-gradient(90deg, ${C.primary} 0%, ${C.dark} 100%)`,
                                     borderRadius: 4,
                                     transition: 'width 0.3s ease',
                                 }}
@@ -758,326 +952,200 @@ const Dashboard = () => {
                     </Paper>
                 )}
 
-                <Box sx={{ flexGrow: 1, overflow: 'auto', p: 4, bgcolor: '#f7f9fc' }}>
-                    <Box sx={{ mb: 3 }}>
-                        <Typography variant="h4" sx={{ fontWeight: 800, color: '#1d2129', mb: 0.5 }}>
-                            Welcome back, {user?.firstName}! 👋
-                        </Typography>
-                        <Typography variant="body1" sx={{ color: '#6e7c87', fontWeight: 400 }}>
-                            {currentView === 'dashboard' && "Here's what's happening with your documents today"}
-                            {currentView === 'myDocuments' && "All your uploaded documents"}
-                            {currentView === 'shared' && "Files others have shared with you"}
-                        </Typography>
+                <Box
+                    sx={{ flexGrow: 1, overflow: 'auto', p: 4, bgcolor: C.bg, position: 'relative' }}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
+                    {/* Drag & Drop Overlay */}
+                    {isDragging && (
+                        <Box sx={{
+                            position: 'absolute', inset: 0, zIndex: 1200,
+                            bgcolor: 'rgba(3,105,161,0.08)',
+                            border: `3px dashed ${C.primary}`,
+                            borderRadius: 3,
+                            display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center',
+                            backdropFilter: 'blur(2px)',
+                            pointerEvents: 'none',
+                        }}>
+                            <CloudUpload sx={{ fontSize: 64, color: C.primary, mb: 2, opacity: 0.8 }} />
+                            <Typography variant="h5" sx={{ fontWeight: 700, color: C.primary }}>
+                                Drop to upload
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: C.textSecondary, mt: 0.5 }}>
+                                Release to start uploading your file
+                            </Typography>
+                        </Box>
+                    )}
+
+                    <Box sx={{
+                        mb: 3,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
+                        borderRadius: 3,
+                        px: 3.5,
+                        py: 2.5,
+                        color: 'white',
+                    }}>
+                        <Box>
+                            <Typography variant="h5" sx={{ fontWeight: 800, color: 'white', mb: 0.3 }}>
+                                {(() => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; })()}, {user?.firstName} 👋
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)', fontWeight: 400 }}>
+                                {currentView === 'dashboard' && `You have ${files.filter(f => f.ownerEmail === user?.email).length} documents · AI-powered search is ready`}
+                                {currentView === 'myDocuments' && 'All your uploaded documents'}
+                                {currentView === 'shared' && 'Files shared with you by others'}
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(255,255,255,0.12)', px: 2, py: 1, borderRadius: 2 }}>
+                            <SmartToy sx={{ fontSize: 18, color: 'rgba(255,255,255,0.9)' }} />
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600, fontSize: '0.78rem' }}>
+                                AI Ready
+                            </Typography>
+                        </Box>
                     </Box>
 
                     {/* Stats Cards */}
-                    <Box sx={{ display: 'flex', gap: 3, mb: 4 }}>
-                        <Paper
-                            elevation={0}
-                            sx={{
-                                flex: 1,
-                                p: 2.5,
-                                borderRadius: 3,
-                                background: 'linear-gradient(135deg, #ff8fab 0%, #fb6f92 100%)',
-                                color: 'white',
-                                boxShadow: '0 4px 16px rgba(102, 126, 234, 0.3)',
-                                transition: 'transform 0.2s ease',
-                                '&:hover': {
-                                    transform: 'translateY(-4px)',
-                                    boxShadow: '0 8px 24px rgba(102, 126, 234, 0.4)',
-                                }
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box
-                                    sx={{
-                                        bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                        p: 1.5,
-                                        borderRadius: 2,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}
-                                >
-                                    <InsertDriveFile sx={{ fontSize: 28 }} />
+                    <Box sx={{ display: 'flex', gap: 2.5, mb: 3.5 }}>
+                        {[
+                            {
+                                label: 'Total Documents',
+                                value: files.filter(f => f.ownerEmail === user?.email).length,
+                                sub: 'in your library',
+                                icon: <InsertDriveFile sx={{ fontSize: 24, color: C.primary }} />,
+                                iconBg: C.tint,
+                                accent: C.primary,
+                            },
+                            {
+                                label: 'Uploaded Today',
+                                value: files.filter(f => new Date(f.uploadedAt).toDateString() === new Date().toDateString() && f.ownerEmail === user?.email).length,
+                                sub: 'new files',
+                                icon: <CloudUpload sx={{ fontSize: 24, color: '#059669' }} />,
+                                iconBg: '#ecfdf5',
+                                accent: '#059669',
+                            },
+                            {
+                                label: 'Storage Used',
+                                value: getTotalSize(),
+                                sub: 'AES-256 encrypted',
+                                icon: <Folder sx={{ fontSize: 24, color: C.accent }} />,
+                                iconBg: '#e0f2fe',
+                                accent: C.accent,
+                            },
+                        ].map((card, i) => (
+                            <Paper
+                                key={i}
+                                elevation={0}
+                                sx={{
+                                    flex: 1,
+                                    p: 3,
+                                    borderRadius: 3,
+                                    bgcolor: 'white',
+                                    border: `1px solid ${C.border}`,
+                                    borderTop: `3px solid ${card.accent}`,
+                                    boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+                                    transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+                                    '&:hover': { transform: 'translateY(-3px)', boxShadow: `0 8px 24px ${C.shadow}` }
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1.5 }}>
+                                    <Box>
+                                        <Typography variant="caption" sx={{ color: C.textSecondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: '0.7rem' }}>
+                                            {card.label}
+                                        </Typography>
+                                        <Typography variant="h3" sx={{ fontWeight: 800, color: C.textPrimary, lineHeight: 1.1, mt: 0.5 }}>
+                                            {card.value}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: C.textSecondary, fontSize: '0.72rem' }}>
+                                            {card.sub}
+                                        </Typography>
+                                    </Box>
+                                    <Box sx={{ bgcolor: card.iconBg, p: 1.2, borderRadius: 2.5, display: 'flex', mt: 0.5 }}>
+                                        {card.icon}
+                                    </Box>
                                 </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                                    <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '1.5rem' }}>
-                                        Total Documents:
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '1.5rem' }}>
-                                        {files.filter(f => f.ownerEmail === user?.email).length}
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        </Paper>
-
-                        <Paper
-                            elevation={0}
-                            sx={{
-                                flex: 1,
-                                p: 2.5,
-                                borderRadius: 3,
-                                background: 'linear-gradient(135deg, #ffd60a 0%, #f5576c 100%)',
-                                color: 'white',
-                                boxShadow: '0 4px 16px rgba(240, 147, 251, 0.3)',
-                                transition: 'transform 0.2s ease',
-                                '&:hover': {
-                                    transform: 'translateY(-4px)',
-                                    boxShadow: '0 8px 24px rgba(240, 147, 251, 0.4)',
-                                }
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box
-                                    sx={{
-                                        bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                        p: 1.5,
-                                        borderRadius: 2,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}
-                                >
-                                    <CloudUpload sx={{ fontSize: 28 }} />
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                                    <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '1.5rem' }}>
-                                        Files Today:
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '1.5rem' }}>
-                                        {files.filter(f => {
-                                            const today = new Date().toDateString();
-                                            return new Date(f.uploadedAt).toDateString() === today &&
-                                                f.ownerEmail === user?.email;
-                                        }).length}
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        </Paper>
-
-                        <Paper
-                            elevation={0}
-                            sx={{
-                                flex: 1,
-                                p: 2.5,
-                                borderRadius: 3,
-                                background: 'linear-gradient(135deg, #90a955 0%, #4f772d 100%)',
-                                color: 'white',
-                                boxShadow: '0 4px 16px rgba(79, 172, 254, 0.3)',
-                                transition: 'transform 0.2s ease',
-                                '&:hover': {
-                                    transform: 'translateY(-4px)',
-                                    boxShadow: '0 8px 24px rgba(79, 172, 254, 0.4)',
-                                }
-                            }}
-                        >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box
-                                    sx={{
-                                        bgcolor: 'rgba(255, 255, 255, 0.2)',
-                                        p: 1.5,
-                                        borderRadius: 2,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}
-                                >
-                                    <Folder sx={{ fontSize: 28 }} />
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                                    <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 500, fontSize: '1.5rem' }}>
-                                        Storage Used:
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '1.5rem' }}>
-                                        {getTotalSize()}
-                                    </Typography>
-                                </Box>
-                            </Box>
-                        </Paper>
+                            </Paper>
+                        ))}
                     </Box>
 
                     {/* Filter Section */}
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            p: 2.5,
-                            borderRadius: 3,
-                            mb: 3,
-                            border: '1px solid #e8edf2',
-                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
-                        }}
-                    >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
-                            <Box>
-                                <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, fontWeight: 600, color: '#6e7c87' }}>
-                                    <FilterList sx={{ fontSize: 16 }} /> File Type
-                                </Typography>
-                                <ButtonGroup variant="outlined" size="small">
-                                    <Button
-                                        onClick={() => setFileTypeFilter('all')}
-                                        variant={fileTypeFilter === 'all' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: fileTypeFilter === 'all' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: fileTypeFilter === 'all' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        All
-                                    </Button>
-                                    <Button
-                                        onClick={() => setFileTypeFilter('pdf')}
-                                        variant={fileTypeFilter === 'pdf' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: fileTypeFilter === 'pdf' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: fileTypeFilter === 'pdf' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        PDF
-                                    </Button>
-                                    <Button
-                                        onClick={() => setFileTypeFilter('image')}
-                                        variant={fileTypeFilter === 'image' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: fileTypeFilter === 'image' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: fileTypeFilter === 'image' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        Images
-                                    </Button>
-                                    <Button
-                                        onClick={() => setFileTypeFilter('document')}
-                                        variant={fileTypeFilter === 'document' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: fileTypeFilter === 'document' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: fileTypeFilter === 'document' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        Docs
-                                    </Button>
-                                </ButtonGroup>
-                            </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                        <FormControl size="small" sx={{ minWidth: 140 }}>
+                            <InputLabel sx={{ color: C.textSecondary, '&.Mui-focused': { color: C.primary } }}>
+                                File Type
+                            </InputLabel>
+                            <Select
+                                value={fileTypeFilter}
+                                label="File Type"
+                                onChange={(e) => setFileTypeFilter(e.target.value)}
+                                startAdornment={<InputAdornment position="start"><FilterList sx={{ fontSize: 18, color: C.primary, ml: 0.5 }} /></InputAdornment>}
+                                sx={{
+                                    borderRadius: 2,
+                                    bgcolor: C.surface,
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: C.border },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: C.primary },
+                                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: C.primary },
+                                }}
+                            >
+                                <MenuItem value="all">All Types</MenuItem>
+                                <MenuItem value="pdf">PDF</MenuItem>
+                                <MenuItem value="image">Images</MenuItem>
+                                <MenuItem value="document">Documents</MenuItem>
+                            </Select>
+                        </FormControl>
 
-                            <Box>
-                                <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, fontWeight: 600, color: '#6e7c87' }}>
-                                    <CalendarToday sx={{ fontSize: 16 }} /> Date
-                                </Typography>
-                                <ButtonGroup variant="outlined" size="small">
-                                    <Button
-                                        onClick={() => setDateFilter('all')}
-                                        variant={dateFilter === 'all' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: dateFilter === 'all' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: dateFilter === 'all' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        All Time
-                                    </Button>
-                                    <Button
-                                        onClick={() => setDateFilter('today')}
-                                        variant={dateFilter === 'today' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: dateFilter === 'today' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: dateFilter === 'today' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        Today
-                                    </Button>
-                                    <Button
-                                        onClick={() => setDateFilter('week')}
-                                        variant={dateFilter === 'week' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: dateFilter === 'week' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: dateFilter === 'week' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        This Week
-                                    </Button>
-                                    <Button
-                                        onClick={() => setDateFilter('month')}
-                                        variant={dateFilter === 'month' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: dateFilter === 'month' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: dateFilter === 'month' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        This Month
-                                    </Button>
-                                </ButtonGroup>
-                            </Box>
+                        <FormControl size="small" sx={{ minWidth: 150 }}>
+                            <InputLabel sx={{ color: C.textSecondary, '&.Mui-focused': { color: C.primary } }}>
+                                Date Range
+                            </InputLabel>
+                            <Select
+                                value={dateFilter}
+                                label="Date Range"
+                                onChange={(e) => setDateFilter(e.target.value)}
+                                startAdornment={<InputAdornment position="start"><CalendarToday sx={{ fontSize: 16, color: C.primary, ml: 0.5 }} /></InputAdornment>}
+                                sx={{
+                                    borderRadius: 2,
+                                    bgcolor: C.surface,
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: C.border },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: C.primary },
+                                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: C.primary },
+                                }}
+                            >
+                                <MenuItem value="all">All Time</MenuItem>
+                                <MenuItem value="today">Today</MenuItem>
+                                <MenuItem value="week">This Week</MenuItem>
+                                <MenuItem value="month">This Month</MenuItem>
+                            </Select>
+                        </FormControl>
 
-                            <Box>
-                                <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, fontWeight: 600, color: '#6e7c87' }}>
-                                    <Sort sx={{ fontSize: 16 }} /> Sort By
-                                </Typography>
-                                <ButtonGroup variant="outlined" size="small">
-                                    <Button
-                                        onClick={() => setSortBy('newest')}
-                                        variant={sortBy === 'newest' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: sortBy === 'newest' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: sortBy === 'newest' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        Newest
-                                    </Button>
-                                    <Button
-                                        onClick={() => setSortBy('oldest')}
-                                        variant={sortBy === 'oldest' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: sortBy === 'oldest' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: sortBy === 'oldest' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        Oldest
-                                    </Button>
-                                    <Button
-                                        onClick={() => setSortBy('largest')}
-                                        variant={sortBy === 'largest' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: sortBy === 'largest' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: sortBy === 'largest' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        Largest
-                                    </Button>
-                                    <Button
-                                        onClick={() => setSortBy('name')}
-                                        variant={sortBy === 'name' ? 'contained' : 'outlined'}
-                                        sx={{
-                                            background: sortBy === 'name' ? 'linear-gradient(135deg, #003566 0%, #001D3D 100%)' : 'transparent',
-                                            color: sortBy === 'name' ? 'white' : '#003566',
-                                            borderColor: '#003566',
-                                            '&:hover': { borderColor: '#003566' }
-                                        }}
-                                    >
-                                        A-Z
-                                    </Button>
-                                </ButtonGroup>
-                            </Box>
-                        </Box>
-                    </Paper>
+                        <FormControl size="small" sx={{ minWidth: 140 }}>
+                            <InputLabel sx={{ color: C.textSecondary, '&.Mui-focused': { color: C.primary } }}>
+                                Sort By
+                            </InputLabel>
+                            <Select
+                                value={sortBy}
+                                label="Sort By"
+                                onChange={(e) => setSortBy(e.target.value)}
+                                startAdornment={<InputAdornment position="start"><Sort sx={{ fontSize: 18, color: C.primary, ml: 0.5 }} /></InputAdornment>}
+                                sx={{
+                                    borderRadius: 2,
+                                    bgcolor: C.surface,
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: C.border },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: C.primary },
+                                    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: C.primary },
+                                }}
+                            >
+                                <MenuItem value="newest">Newest First</MenuItem>
+                                <MenuItem value="oldest">Oldest First</MenuItem>
+                                <MenuItem value="largest">Largest First</MenuItem>
+                                <MenuItem value="name">Name A–Z</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </Box>
 
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1089,7 +1157,7 @@ const Dashboard = () => {
                                     icon={<SmartToy />}
                                     label="AI Search Results"
                                     sx={{
-                                        background: 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
+                                        background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
                                         color: 'white',
                                         fontWeight: 600
                                     }}
@@ -1100,7 +1168,7 @@ const Dashboard = () => {
                             <Chip
                                 label={`${filteredFiles.length} files`}
                                 sx={{
-                                    bgcolor: '#003566',
+                                    bgcolor: C.primary,
                                     color: 'white',
                                     fontWeight: 600
                                 }}
@@ -1112,11 +1180,11 @@ const Dashboard = () => {
                                         localStorage.setItem('viewMode', 'grid');
                                     }}
                                     sx={{
-                                        bgcolor: viewMode === 'grid' ? '#003566' : 'transparent',
-                                        color: viewMode === 'grid' ? 'white' : '#003566',
-                                        borderColor: '#003566',
+                                        bgcolor: viewMode === 'grid' ? C.primary : 'transparent',
+                                        color: viewMode === 'grid' ? 'white' : C.primary,
+                                        borderColor: C.primary,
                                         borderRadius: '4px 0 0 4px',
-                                        '&:hover': { bgcolor: viewMode === 'grid' ? '#001D3D' : '#f7f9fc' }
+                                        '&:hover': { bgcolor: viewMode === 'grid' ? C.dark : '#f7f9fc' }
                                     }}
                                 >
                                     <ViewModule />
@@ -1127,12 +1195,12 @@ const Dashboard = () => {
                                         localStorage.setItem('viewMode', 'list');
                                     }}
                                     sx={{
-                                        bgcolor: viewMode === 'list' ? '#003566' : 'transparent',
-                                        color: viewMode === 'list' ? 'white' : '#003566',
-                                        borderColor: '#003566',
+                                        bgcolor: viewMode === 'list' ? C.primary : 'transparent',
+                                        color: viewMode === 'list' ? 'white' : C.primary,
+                                        borderColor: C.primary,
                                         borderRadius: '0 4px 4px 0',
-                                        borderLeft: '1px solid #003566',
-                                        '&:hover': { bgcolor: viewMode === 'list' ? '#001D3D' : '#f7f9fc' }
+                                        borderLeft: `1px solid ${C.primary}`,
+                                        '&:hover': { bgcolor: viewMode === 'list' ? C.dark : '#f7f9fc' }
                                     }}
                                 >
                                     <ViewList />
@@ -1141,9 +1209,85 @@ const Dashboard = () => {
                         </Box>
                     </Box>
 
+                    {/* Activity Feed View */}
+                    {currentView === 'activity' && (
+                        <Box>
+                            {activityFeed.length === 0 ? (
+                                <Paper elevation={0} sx={{ p: 6, textAlign: 'center', borderRadius: 3, border: `1px solid ${C.border}` }}>
+                                    <CalendarToday sx={{ fontSize: 48, color: C.border, mb: 2 }} />
+                                    <Typography variant="h6" sx={{ color: C.textSecondary, fontWeight: 500 }}>No activity yet</Typography>
+                                    <Typography variant="body2" sx={{ color: C.textSecondary, mt: 0.5 }}>Upload, preview, share or delete files to see activity here</Typography>
+                                </Paper>
+                            ) : (
+                                <Paper elevation={0} sx={{ borderRadius: 3, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+                                    {activityFeed.map((item, i) => (
+                                        <Box key={i} sx={{
+                                            display: 'flex', alignItems: 'center', gap: 2, px: 3, py: 2,
+                                            borderBottom: i < activityFeed.length - 1 ? `1px solid ${C.border}` : 'none',
+                                            bgcolor: i === 0 ? C.tint : 'white',
+                                            transition: 'bgcolor 0.3s',
+                                        }}>
+                                            <Box sx={{
+                                                width: 38, height: 38, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                                bgcolor: item.icon === 'upload' ? '#dcfce7' : item.icon === 'delete' ? '#fee2e2' : item.icon === 'share' ? C.tint : '#f0f9ff',
+                                            }}>
+                                                {item.icon === 'upload' && <CloudUpload sx={{ fontSize: 18, color: '#16a34a' }} />}
+                                                {item.icon === 'delete' && <Delete sx={{ fontSize: 18, color: '#dc2626' }} />}
+                                                {item.icon === 'share' && <Share sx={{ fontSize: 18, color: C.primary }} />}
+                                                {item.icon === 'preview' && <Search sx={{ fontSize: 18, color: C.accent }} />}
+                                                {item.icon === 'download' && <Download sx={{ fontSize: 18, color: C.primary }} />}
+                                            </Box>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography variant="body2" sx={{ fontWeight: 600, color: C.textPrimary }}>
+                                                    {item.action}{' '}
+                                                    <Box component="span" sx={{ fontWeight: 400, color: C.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {item.fileName}
+                                                    </Box>
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="caption" sx={{ color: C.textSecondary, flexShrink: 0 }}>
+                                                {item.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </Typography>
+                                        </Box>
+                                    ))}
+                                </Paper>
+                            )}
+                        </Box>
+                    )}
+
+                    {/* Claude AI Answer Panel */}
+                    {aiAnswer && searchMode === 'ai' && (
+                        <Paper
+                            elevation={0}
+                            sx={{
+                                mb: 3,
+                                p: 3,
+                                borderRadius: 3,
+                                border: `1.5px solid ${C.primary}`,
+                                background: `linear-gradient(135deg, rgba(0,53,102,0.04) 0%, rgba(0,29,61,0.04) 100%)`,
+                                boxShadow: `0 2px 12px ${C.shadow}`,
+                            }}
+                        >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                                <SmartToy sx={{ color: C.primary, fontSize: 22 }} />
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: C.primary }}>
+                                    AI Answer
+                                </Typography>
+                                <Chip
+                                    label="AI Generated"
+                                    size="small"
+                                    sx={{ bgcolor: C.tint, color: C.primary, fontWeight: 600, fontSize: '0.7rem', height: 20 }}
+                                />
+                            </Box>
+                            <Typography variant="body2" sx={{ color: C.textPrimary, lineHeight: 1.7 }}>
+                                {aiAnswer}
+                            </Typography>
+                        </Paper>
+                    )}
+
                     {loading || aiSearching ? (
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 8 }}>
-                            <CircularProgress sx={{ color: '#003566' }} size={60} />
+                            <CircularProgress sx={{ color: C.primary }} size={60} />
                             {aiSearching && (
                                 <Typography variant="body1" sx={{ mt: 2, color: '#6e7c87', fontWeight: 500 }}>
                                     🤖 AI is analyzing your documents...
@@ -1153,29 +1297,49 @@ const Dashboard = () => {
                     ) : filteredFiles.length === 0 ? (
                         <Paper
                             elevation={0}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
                             sx={{
-                                p: 8,
+                                p: { xs: 6, md: 10 },
                                 textAlign: 'center',
                                 borderRadius: 4,
-                                bgcolor: 'white',
-                                border: '2px dashed #e8edf2',
-                                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%)',
+                                border: isDragging ? `2px dashed ${C.primary}` : '2px dashed #cbd5e1',
+                                background: isDragging
+                                    ? `linear-gradient(135deg, rgba(3,105,161,0.07) 0%, rgba(14,165,233,0.07) 100%)`
+                                    : `linear-gradient(135deg, rgba(248,250,252,1) 0%, rgba(224,242,254,0.4) 100%)`,
+                                transition: 'all 0.2s ease',
+                                cursor: 'default',
                             }}
                         >
-                            <Folder sx={{ fontSize: 100, color: '#003566', opacity: 0.3, mb: 2 }} />
-                            <Typography variant="h5" sx={{ color: '#1d2129', fontWeight: 600, mb: 1 }}>
-                                {searchMode === 'ai' && searchQuery ? 'No matching documents found' :
-                                    searchQuery ? 'No files found' :
-                                        currentView === 'dashboard' ? 'No files match your filters' :
-                                            currentView === 'myDocuments' ? 'No files yet' :
-                                                'No files shared with you yet'}
-                            </Typography>
-                            <Typography variant="body1" color="textSecondary">
-                                {searchMode === 'ai' && searchQuery ? 'Try a different search query or switch to Normal search' :
-                                    searchQuery || fileTypeFilter !== 'all' || dateFilter !== 'all' ? 'Try adjusting your filters' :
-                                        currentView === 'shared' ? 'Files shared with you will appear here' :
-                                            'Click the + button to upload your first file'}
-                            </Typography>
+                            {!searchQuery && (fileTypeFilter === 'all') && (dateFilter === 'all') && currentView !== 'shared' ? (
+                                <>
+                                    <Box sx={{ mb: 2 }}>
+                                        <CloudUpload sx={{ fontSize: 72, color: isDragging ? C.primary : '#94a3b8', transition: 'color 0.2s ease' }} />
+                                    </Box>
+                                    <Typography variant="h5" sx={{ fontWeight: 700, color: isDragging ? C.primary : C.textPrimary, mb: 1 }}>
+                                        {isDragging ? 'Drop to upload' : 'No documents yet'}
+                                    </Typography>
+                                    <Typography variant="body1" sx={{ color: C.textSecondary }}>
+                                        Drag & drop files here, or use the <strong style={{ color: C.primary }}>+ Upload</strong> button
+                                    </Typography>
+                                </>
+                            ) : (
+                                <>
+                                    <Folder sx={{ fontSize: 72, color: '#94a3b8', mb: 2 }} />
+                                    <Typography variant="h5" sx={{ fontWeight: 700, color: C.textPrimary, mb: 1 }}>
+                                        {searchMode === 'ai' && searchQuery ? 'No matching documents found' :
+                                            searchQuery ? 'No files match your search' :
+                                                currentView === 'shared' ? 'No shared files yet' :
+                                                    'No files match your filters'}
+                                    </Typography>
+                                    <Typography variant="body1" sx={{ color: C.textSecondary }}>
+                                        {searchMode === 'ai' && searchQuery ? 'Try a different query or switch to Normal search' :
+                                            searchQuery || fileTypeFilter !== 'all' || dateFilter !== 'all' ? 'Try adjusting your filters or search terms' :
+                                                'Files shared with you will appear here'}
+                                    </Typography>
+                                </>
+                            )}
                         </Paper>
                     ) : viewMode === 'grid' ? (
                         <Box
@@ -1191,13 +1355,18 @@ const Dashboard = () => {
                                     key={file.id}
                                     elevation={0}
                                     sx={{
-                                        borderRadius: 3,
+                                        borderRadius: 4,
                                         overflow: 'hidden',
                                         border: '1px solid #e8edf2',
+                                        borderLeft: `4px solid ${
+                                            file.fileType?.includes('pdf') ? '#ef4444' :
+                                            file.fileType?.includes('image') ? '#10b981' :
+                                            file.fileType?.includes('text') ? C.primary : '#94a3b8'
+                                        }`,
                                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                                         transition: 'all 0.2s ease',
                                         '&:hover': {
-                                            boxShadow: '0 8px 24px rgba(102, 126, 234, 0.15)',
+                                            boxShadow: `0 8px 24px ${C.shadowHover}`,
                                             transform: 'translateY(-4px)',
                                         },
                                         cursor: 'pointer',
@@ -1210,13 +1379,27 @@ const Dashboard = () => {
                                             bgcolor: file.fileType?.includes('pdf') ? '#ffebee' :
                                                 file.fileType?.includes('image') ? '#e8f5e9' :
                                                     file.fileType?.includes('text') ? '#e3f2fd' : '#f5f5f5',
+                                            background: file.fileType?.includes('pdf')
+                                                ? 'linear-gradient(135deg, #ffebee 0%, #fce4ec 100%)'
+                                                : file.fileType?.includes('image')
+                                                ? 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)'
+                                                : file.fileType?.includes('text')
+                                                ? 'linear-gradient(135deg, #e3f2fd 0%, #e8eaf6 100%)'
+                                                : 'linear-gradient(135deg, #f5f5f5 0%, #fafafa 100%)',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             position: 'relative',
                                         }}
                                     >
-                                        {getFileIcon(file.fileType)}
+                                        {file.fileType?.includes('image')
+                                            ? <Image sx={{ fontSize: 52, color: '#10b981' }} />
+                                            : file.fileType?.includes('pdf')
+                                            ? <PictureAsPdf sx={{ fontSize: 52, color: '#ef4444' }} />
+                                            : file.fileType?.includes('text')
+                                            ? <Description sx={{ fontSize: 52, color: C.primary }} />
+                                            : <InsertDriveFile sx={{ fontSize: 52, color: '#94a3b8' }} />
+                                        }
                                         {file.ownerEmail !== user?.email && (
                                             <Chip
                                                 label="Shared"
@@ -1225,8 +1408,8 @@ const Dashboard = () => {
                                                     position: 'absolute',
                                                     top: 12,
                                                     right: 12,
-                                                    bgcolor: '#e3f2fd',
-                                                    color: '#1976d2',
+                                                    bgcolor: C.tint,
+                                                    color: C.primary,
                                                     fontWeight: 600,
                                                     fontSize: '0.7rem'
                                                 }}
@@ -1263,12 +1446,12 @@ const Dashboard = () => {
                                                         }}
                                                         sx={{
                                                             bgcolor: '#f7f9fc',
-                                                            color: '#003566',
+                                                            color: C.primary,
                                                             transform: expandedFiles.has(file.id) ? 'rotate(180deg)' : 'rotate(0deg)',
                                                             transition: 'transform 0.3s ease',
                                                             '&:hover': {
                                                                 bgcolor: '#e8edf2',
-                                                                color: '#001D3D'
+                                                                color: C.dark
                                                             }
                                                         }}
                                                     >
@@ -1311,8 +1494,8 @@ const Dashboard = () => {
                                                         label={keyword}
                                                         size="small"
                                                         sx={{
-                                                            bgcolor: '#E3F2FD',
-                                                            color: '#003566',
+                                                            bgcolor: C.tint,
+                                                            color: C.primary,
                                                             fontWeight: 600,
                                                             fontSize: '0.65rem',
                                                             height: 20,
@@ -1434,11 +1617,11 @@ const Dashboard = () => {
                                                 size="small"
                                                 sx={{
                                                     mr: 3,  // Increased from 2 to 3 for more space
-                                                    color: '#003566',
+                                                    color: C.primary,
                                                     transform: expandedFiles.has(file.id) ? 'rotate(180deg)' : 'rotate(0deg)',
                                                     transition: 'transform 0.3s ease',
                                                     '&:hover': {
-                                                        bgcolor: '#E3F2FD',
+                                                        bgcolor: C.tint,
                                                     },
                                                     '& .MuiSvgIcon-root': {
                                                         fontSize: 32,
@@ -1453,17 +1636,17 @@ const Dashboard = () => {
                                         <Button
                                             variant="contained"
                                             sx={{
-                                                background: 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
+                                                background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
                                                 color: 'white',
                                                 textTransform: 'none',
                                                 fontWeight: 600,
                                                 px: 3,
                                                 borderRadius: 2,
                                                 mr: 2,
-                                                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                                                boxShadow: `0 4px 12px ${C.shadow}`,
                                                 '&:hover': {
-                                                    background: 'linear-gradient(135deg, #001D3D 0%, #001D3D 100%)',
-                                                    boxShadow: '0 6px 16px rgba(102, 126, 234, 0.4)',
+                                                    background: `linear-gradient(135deg, ${C.dark} 0%, ${C.dark} 100%)`,
+                                                    boxShadow: `0 6px 16px ${C.shadowHover}`,
                                                 }
                                             }}
                                             onClick={() => handleOpenFile(file)}
@@ -1503,7 +1686,7 @@ const Dashboard = () => {
                                                 {/* Keywords */}
                                                 {file.keywords && file.keywords.length > 0 && (
                                                     <Box sx={{ mb: 2 }}>
-                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#003566', mb: 1, display: 'block' }}>
+                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: C.primary, mb: 1, display: 'block' }}>
                                                             🏷️ KEYWORDS
                                                         </Typography>
                                                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8 }}>
@@ -1514,7 +1697,7 @@ const Dashboard = () => {
                                                                     size="small"
                                                                     sx={{
                                                                         bgcolor: '#E3F2FD',
-                                                                        color: '#003566',
+                                                                        color: C.primary,
                                                                         fontWeight: 600,
                                                                         fontSize: '0.75rem',
                                                                         '&:hover': {
@@ -1530,7 +1713,7 @@ const Dashboard = () => {
                                                 {/* Summary */}
                                                 {file.summary && (
                                                     <Box>
-                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#003566', mb: 0.5, display: 'block' }}>
+                                                        <Typography variant="caption" sx={{ fontWeight: 700, color: C.primary, mb: 0.5, display: 'block' }}>
                                                             📝 SUMMARY
                                                         </Typography>
                                                         <Typography
@@ -1555,27 +1738,149 @@ const Dashboard = () => {
                 </Box>
             </Box>
 
-            <Fab
-                color="primary"
-                component="label"
-                sx={{
-                    position: 'fixed',
-                    bottom: 40,
-                    right: 40,
-                    width: 72,
-                    height: 72,
-                    background: 'linear-gradient(135deg, #faa307 0%, #f48c06 100%)',
-                    '&:hover': {
-                        background: 'linear-gradient(135deg, #f48c06 0%, #f48c06 100%)',
-                        transform: 'scale(1.1)',
-                    },
-                    transition: 'all 0.3s ease',
-                }}
-                disabled={uploading}
-            >
-                <input type="file" hidden onChange={handleFileInputChange} />
-                {uploading ? <CircularProgress size={28} sx={{ color: 'white' }} /> : <Add sx={{ fontSize: 32 }} />}
-            </Fab>
+            <Box sx={{ position: 'fixed', bottom: 40, right: 40 }}>
+                {/* Pulsing ring animation */}
+                {!uploading && (
+                    <Box sx={{
+                        position: 'absolute',
+                        inset: -6,
+                        borderRadius: 10,
+                        border: `2px solid ${C.accentFab}`,
+                        opacity: 0.5,
+                        animation: 'fabPulse 2s ease-in-out infinite',
+                        '@keyframes fabPulse': {
+                            '0%': { transform: 'scale(1)', opacity: 0.5 },
+                            '50%': { transform: 'scale(1.12)', opacity: 0.15 },
+                            '100%': { transform: 'scale(1)', opacity: 0.5 },
+                        },
+                        pointerEvents: 'none',
+                    }} />
+                )}
+                <Fab
+                    color="primary"
+                    component="label"
+                    variant="extended"
+                    sx={{
+                        background: `linear-gradient(135deg, ${C.accentFab} 0%, ${C.accentFabHover} 100%)`,
+                        color: 'white',
+                        fontWeight: 700,
+                        fontSize: '0.95rem',
+                        px: 3,
+                        height: 56,
+                        boxShadow: `0 6px 20px rgba(14,165,233,0.45)`,
+                        '&:hover': {
+                            background: `linear-gradient(135deg, ${C.accentFabHover} 0%, ${C.accentFabHover} 100%)`,
+                            transform: 'scale(1.07)',
+                            boxShadow: `0 8px 28px rgba(14,165,233,0.55)`,
+                        },
+                        transition: 'all 0.3s ease',
+                    }}
+                    disabled={uploading}
+                >
+                    <input type="file" hidden ref={fileInputRef} onChange={handleFileInputChange} />
+                    {uploading
+                        ? <CircularProgress size={24} sx={{ color: 'white', mr: 1 }} />
+                        : <Add sx={{ fontSize: 26, mr: 0.5 }} />
+                    }
+                    Upload
+                </Fab>
+            </Box>
+
+
+            {/* Chat Panel */}
+            {chatOpen && (
+                <Paper elevation={12} sx={{
+                    position: 'fixed', top: 76, right: 24,
+                    width: 380, height: 520,
+                    borderRadius: 4,
+                    display: 'flex', flexDirection: 'column',
+                    overflow: 'hidden',
+                    zIndex: 1400,
+                    boxShadow: `0 16px 48px rgba(3,105,161,0.25)`,
+                    border: `1px solid ${C.border}`,
+                }}>
+                    {/* Header */}
+                    <Box sx={{
+                        background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
+                        px: 2.5, py: 2,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+                            <SmartToy sx={{ color: 'white', fontSize: 22 }} />
+                            <Box>
+                                <Typography variant="subtitle1" sx={{ color: 'white', fontWeight: 700, lineHeight: 1.1 }}>
+                                    Ask your documents
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.65)' }}>
+                                    Powered by Claude AI
+                                </Typography>
+                            </Box>
+                        </Box>
+                        <IconButton size="small" onClick={() => setChatOpen(false)} sx={{ color: 'white' }}>
+                            <ExpandMore sx={{ transform: 'rotate(-90deg)' }} />
+                        </IconButton>
+                    </Box>
+
+                    {/* Messages */}
+                    <Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                        {chatMessages.map((msg, i) => (
+                            <Box key={i} sx={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                {msg.role === 'ai' && (
+                                    <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', mr: 1, flexShrink: 0, mt: 0.3 }}>
+                                        <SmartToy sx={{ fontSize: 16, color: 'white' }} />
+                                    </Box>
+                                )}
+                                <Box sx={{
+                                    maxWidth: '78%',
+                                    px: 2, py: 1.2,
+                                    borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                                    bgcolor: msg.role === 'user' ? C.primary : 'white',
+                                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                                    border: msg.role === 'ai' ? `1px solid ${C.border}` : 'none',
+                                }}>
+                                    <Typography variant="body2" sx={{ color: msg.role === 'user' ? 'white' : C.textPrimary, lineHeight: 1.6 }}>
+                                        {msg.text}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        ))}
+                        {chatLoading && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <SmartToy sx={{ fontSize: 16, color: 'white' }} />
+                                </Box>
+                                <Box sx={{ px: 2, py: 1.2, bgcolor: 'white', borderRadius: '16px 16px 16px 4px', border: `1px solid ${C.border}` }}>
+                                    <CircularProgress size={16} sx={{ color: C.primary }} />
+                                </Box>
+                            </Box>
+                        )}
+                    </Box>
+
+                    {/* Input */}
+                    <Box sx={{ p: 2, borderTop: `1px solid ${C.border}`, bgcolor: 'white', display: 'flex', gap: 1 }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Ask about your documents..."
+                            value={chatInput}
+                            onChange={e => setChatInput(e.target.value)}
+                            onKeyPress={e => e.key === 'Enter' && handleChatSend()}
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                        />
+                        <IconButton
+                            onClick={handleChatSend}
+                            disabled={chatLoading || !chatInput.trim()}
+                            sx={{
+                                bgcolor: C.primary, color: 'white', borderRadius: 2,
+                                '&:hover': { bgcolor: C.dark },
+                                '&:disabled': { bgcolor: C.border },
+                            }}
+                        >
+                            <Search />
+                        </IconButton>
+                    </Box>
+                </Paper>
+            )}
 
             <Menu
                 anchorEl={anchorEl}
@@ -1596,7 +1901,7 @@ const Dashboard = () => {
                     }}
                     sx={{ py: 1.5 }}
                 >
-                    <Edit sx={{ mr: 2, fontSize: 22, color: '#003566' }} />
+                    <Edit sx={{ mr: 2, fontSize: 22, color: C.primary }} />
                     <Typography sx={{ fontWeight: 500 }}>Rename</Typography>
                 </MenuItem>
                 <MenuItem
@@ -1605,7 +1910,7 @@ const Dashboard = () => {
                     }}
                     sx={{ py: 1.5 }}
                 >
-                    <Share sx={{ mr: 2, fontSize: 22, color: '#003566' }} />
+                    <Share sx={{ mr: 2, fontSize: 22, color: C.primary }} />
                     <Typography sx={{ fontWeight: 500 }}>Share</Typography>
                 </MenuItem>
                 <MenuItem
@@ -1615,7 +1920,7 @@ const Dashboard = () => {
                     }}
                     sx={{ py: 1.5 }}
                 >
-                    <Download sx={{ mr: 2, fontSize: 22, color: '#003566' }} />
+                    <Download sx={{ mr: 2, fontSize: 22, color: C.primary }} />
                     <Typography sx={{ fontWeight: 500 }}>Download</Typography>
                 </MenuItem>
                 <Divider />
@@ -1643,7 +1948,7 @@ const Dashboard = () => {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                         <Avatar
                             sx={{
-                                background: 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
+                                background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
                                 width: 56,
                                 height: 56,
                                 fontSize: '1.5rem',
@@ -1664,10 +1969,55 @@ const Dashboard = () => {
                 </Box>
                 <Divider />
                 <MenuItem onClick={handleLogout} sx={{ py: 2, px: 3 }}>
-                    <Logout sx={{ mr: 2, fontSize: 22, color: '#003566' }} />
+                    <Logout sx={{ mr: 2, fontSize: 22, color: C.primary }} />
                     <Typography sx={{ fontWeight: 600 }}>Logout</Typography>
                 </MenuItem>
             </Menu>
+
+            {/* Document Preview Dialog */}
+            <Dialog
+                open={Boolean(previewFile)}
+                onClose={() => { setPreviewFile(null); setPreviewUrl(null); }}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', height: '85vh' } }}
+            >
+                <DialogTitle sx={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
+                    color: 'white', py: 2, px: 3,
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        {previewFile?.fileType?.includes('pdf') && <PictureAsPdf sx={{ color: '#fca5a5' }} />}
+                        {previewFile?.fileType?.includes('image') && <Image sx={{ color: '#86efac' }} />}
+                        {previewFile?.fileType?.includes('text') && <Description sx={{ color: '#93c5fd' }} />}
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'white' }}>
+                            {previewFile?.originalFileName}
+                        </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            size="small"
+                            startIcon={<Download />}
+                            onClick={() => handleDownload(previewFile)}
+                            sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.4)', border: '1px solid', borderRadius: 2, textTransform: 'none' }}
+                        >
+                            Download
+                        </Button>
+                        <IconButton size="small" onClick={() => { setPreviewFile(null); setPreviewUrl(null); }} sx={{ color: 'white' }}>
+                            <Delete sx={{ fontSize: 20 }} />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ p: 0, bgcolor: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {previewFile?.fileType?.includes('image') && (
+                        <img src={previewUrl} alt={previewFile.originalFileName} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    )}
+                    {(previewFile?.fileType?.includes('pdf') || previewFile?.fileType?.includes('text')) && (
+                        <iframe src={previewUrl} title={previewFile?.originalFileName} style={{ width: '100%', height: '100%', border: 'none', background: 'white' }} />
+                    )}
+                </DialogContent>
+            </Dialog>
 
             <Dialog
                 open={shareDialogOpen}
@@ -1706,7 +2056,7 @@ const Dashboard = () => {
                         InputProps={{
                             startAdornment: (
                                 <InputAdornment position="start">
-                                    <Email sx={{ color: '#003566' }} />
+                                    <Email sx={{ color: C.primary }} />
                                 </InputAdornment>
                             ),
                         }}
@@ -1731,15 +2081,15 @@ const Dashboard = () => {
                         variant="contained"
                         disabled={!shareEmail}
                         sx={{
-                            background: 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
+                            background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
                             textTransform: 'none',
                             fontWeight: 600,
                             px: 3,
                             borderRadius: 2,
-                            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                            boxShadow: `0 4px 12px ${C.shadow}`,
                             '&:hover': {
-                                background: 'linear-gradient(135deg, #001D3D 0%, #001D3D 100%)',
-                                boxShadow: '0 6px 16px rgba(102, 126, 234, 0.4)',
+                                background: `linear-gradient(135deg, ${C.dark} 0%, ${C.dark} 100%)`,
+                                boxShadow: `0 6px 16px ${C.shadowHover}`,
                             }
                         }}
                     >
@@ -1785,7 +2135,7 @@ const Dashboard = () => {
                         InputProps={{
                             startAdornment: (
                                 <InputAdornment position="start">
-                                    <Edit sx={{ color: '#003566' }} />
+                                    <Edit sx={{ color: C.primary }} />
                                 </InputAdornment>
                             ),
                         }}
@@ -1810,15 +2160,15 @@ const Dashboard = () => {
                         variant="contained"
                         disabled={!newFileName || newFileName === selectedFile?.originalFileName}
                         sx={{
-                            background: 'linear-gradient(135deg, #003566 0%, #001D3D 100%)',
+                            background: `linear-gradient(135deg, ${C.primary} 0%, ${C.dark} 100%)`,
                             textTransform: 'none',
                             fontWeight: 600,
                             px: 3,
                             borderRadius: 2,
-                            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                            boxShadow: `0 4px 12px ${C.shadow}`,
                             '&:hover': {
-                                background: 'linear-gradient(135deg, #001D3D 0%, #001D3D 100%)',
-                                boxShadow: '0 6px 16px rgba(102, 126, 234, 0.4)',
+                                background: `linear-gradient(135deg, ${C.dark} 0%, ${C.dark} 100%)`,
+                                boxShadow: `0 6px 16px ${C.shadowHover}`,
                             }
                         }}
                     >
