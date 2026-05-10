@@ -130,4 +130,14 @@ public class FileController {
             return ResponseEntity.badRequest().build();
         }
     }
+
+    @PostMapping("/reprocess")
+    public ResponseEntity<String> reprocess() {
+        try {
+            int count = fileService.reprocessAllFiles();
+            return ResponseEntity.ok("Reprocessed " + count + " files with AI keywords & summaries");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Reprocess failed: " + e.getMessage());
+        }
+    }
 }

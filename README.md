@@ -15,7 +15,7 @@
 
 ## Overview
 
-**DocuMind** is a full-stack AI document intelligence platform. Upload your files and ask anything — Claude reads your documents and answers in plain English. Built with enterprise-grade security, RAG-based semantic search, AES-256 encrypted AWS S3 storage, and a clean navy/amber UI.
+**DocuMind** is a full-stack AI document intelligence platform. Upload your files and ask anything — Claude reads your documents and answers in plain English. Built with enterprise-grade security, RAG-based semantic search, AES-256 encrypted AWS S3 storage, and a polished Material UI interface.
 
 ---
 
@@ -67,17 +67,29 @@
 
 ## Screenshots
 
-### Dashboard with AI-Generated Keywords & Summaries
+### Login
+![Login](Screenshots/login.png)
+*Split-screen login with DocuMind branding*
+
+### Sign Up
+![Signup](Screenshots/signup.png)
+*Clean sign-up flow with first/last name, email and password*
+
+### Dashboard — Grid View
 ![Dashboard](Screenshots/dashboard-grid.png)
-*Grid view showing auto-generated keywords and summaries with expandable details*
+*Stats cards, filter bar, and file cards with type badges and hover quick-actions*
 
-### AI Semantic Search with Claude Answer Panel
-![AI Search](Screenshots/ai-search.png)
-*Natural language search with Claude-synthesized answer above results*
-
-### List View with NLP Details
+### Dashboard — List View with AI Keywords & Summary
 ![List View](Screenshots/list-view-expanded.png)
-*Expandable section showing keywords and document summary*
+*Auto-expanded list view showing Gemini-generated keywords and document summary per file*
+
+### AI Semantic Search
+![AI Search](Screenshots/ai-search.png)
+*Natural language search powered by OpenAI embeddings — finds documents by meaning, not just filename*
+
+### Ask AI Chat Panel
+![Ask AI](Screenshots/ask-ai-panel.png)
+*Conversational AI panel — ask questions about your documents and get instant answers*
 
 ---
 

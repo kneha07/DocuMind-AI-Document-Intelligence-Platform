@@ -215,6 +215,30 @@ public class FileService {
         return EncryptionUtil.decrypt(encryptedData, metadata.getEncryptionKey());
     }
     
+    public int reprocessAllFiles() {
+        List<FileMetadata> files = fileRepository.findAll();
+        int processed = 0;
+        for (FileMetadata metadata : files) {
+            if (!isTextBasedFile(metadata.getFileType())) continue;
+            if (metadata.getKeywords() != null && !metadata.getKeywords().isEmpty() && metadata.getSummary() != null && !metadata.getSummary().isBlank()) continue;
+            try {
+                byte[] fileData = downloadFile(metadata.getId());
+                String text = extractText(fileData, metadata.getFileType());
+                if (text == null || text.trim().isEmpty()) continue;
+                metadata.setKeywords(keywordExtractionService.extractKeywords(text));
+                Thread.sleep(1500); // avoid Gemini rate limit
+                metadata.setSummary(documentSummaryService.generateSummary(text));
+                fileRepository.save(metadata);
+                log.info("Reprocessed: {}", metadata.getOriginalFileName());
+                processed++;
+                Thread.sleep(1000);
+            } catch (Exception e) {
+                log.warn("Reprocess failed for {}: {}", metadata.getOriginalFileName(), e.getMessage());
+            }
+        }
+        return processed;
+    }
+
     public void deleteFile(String fileId) throws Exception {
         FileMetadata metadata = fileRepository.findById(fileId)
                 .orElseThrow(() -> new RuntimeException("File not found"));

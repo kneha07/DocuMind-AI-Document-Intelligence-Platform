@@ -13,7 +13,7 @@ import {
     CloudUpload, Download, Delete, Logout, InsertDriveFile, Dashboard as DashboardIcon,
     Folder, PeopleAlt, Search, Image, PictureAsPdf, Description,
     MoreVert, Add, Share, Email, FilterList, Sort, CalendarToday, ViewList, ViewModule, Edit,
-    SmartToy, ExpandMore
+    SmartToy, ExpandMore, Visibility
 } from '@mui/icons-material';
 import logo from '../assets/logo.svg';
 
@@ -81,13 +81,22 @@ const Dashboard = () => {
         loadFiles();
     }, []);
 
-    // ADD THIS NEW useEffect:
     useEffect(() => {
         if (searchQuery === '' && searchMode === 'ai') {
             loadFiles();
             setAiAnswer('');
         }
     }, [searchQuery]);
+
+    // Auto-expand all in list view, collapse all in grid view
+    useEffect(() => {
+        if (viewMode === 'list') {
+            setExpandedFiles(new Set(files.map(f => f.id)));
+        } else {
+            setExpandedFiles(new Set());
+        }
+    }, [viewMode, files]);
+
 
     const loadFiles = async () => {
         setLoading(true);
@@ -1173,39 +1182,33 @@ const Dashboard = () => {
                                     fontWeight: 600
                                 }}
                             />
-                            <ButtonGroup variant="outlined" size="small">
+                            <Box sx={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 2, overflow: 'hidden' }}>
                                 <IconButton
-                                    onClick={() => {
-                                        setViewMode('grid');
-                                        localStorage.setItem('viewMode', 'grid');
-                                    }}
+                                    onClick={() => { setViewMode('grid'); localStorage.setItem('viewMode', 'grid'); }}
+                                    aria-label="Grid view"
                                     sx={{
+                                        borderRadius: 0, px: 1.5,
                                         bgcolor: viewMode === 'grid' ? C.primary : 'transparent',
-                                        color: viewMode === 'grid' ? 'white' : C.primary,
-                                        borderColor: C.primary,
-                                        borderRadius: '4px 0 0 4px',
-                                        '&:hover': { bgcolor: viewMode === 'grid' ? C.dark : '#f7f9fc' }
+                                        color: viewMode === 'grid' ? 'white' : C.textSecondary,
+                                        '&:hover': { bgcolor: viewMode === 'grid' ? C.dark : C.tint }
                                     }}
                                 >
-                                    <ViewModule />
+                                    <ViewModule fontSize="small" />
                                 </IconButton>
+                                <Divider orientation="vertical" flexItem />
                                 <IconButton
-                                    onClick={() => {
-                                        setViewMode('list');
-                                        localStorage.setItem('viewMode', 'list');
-                                    }}
+                                    onClick={() => { setViewMode('list'); localStorage.setItem('viewMode', 'list'); }}
+                                    aria-label="List view"
                                     sx={{
+                                        borderRadius: 0, px: 1.5,
                                         bgcolor: viewMode === 'list' ? C.primary : 'transparent',
-                                        color: viewMode === 'list' ? 'white' : C.primary,
-                                        borderColor: C.primary,
-                                        borderRadius: '0 4px 4px 0',
-                                        borderLeft: `1px solid ${C.primary}`,
-                                        '&:hover': { bgcolor: viewMode === 'list' ? C.dark : '#f7f9fc' }
+                                        color: viewMode === 'list' ? 'white' : C.textSecondary,
+                                        '&:hover': { bgcolor: viewMode === 'list' ? C.dark : C.tint }
                                     }}
                                 >
-                                    <ViewList />
+                                    <ViewList fontSize="small" />
                                 </IconButton>
-                            </ButtonGroup>
+                            </Box>
                         </Box>
                     </Box>
 
@@ -1350,122 +1353,166 @@ const Dashboard = () => {
                                 mb: 12,
                             }}
                         >
-                            {filteredFiles.map((file) => (
+                            {filteredFiles.map((file) => {
+                                const isPdf = file.fileType?.includes('pdf');
+                                const isImage = file.fileType?.includes('image');
+                                const isText = file.fileType?.includes('text') || file.fileType?.includes('word') || file.fileType?.includes('document');
+                                const fileColor = isPdf ? '#ef4444' : isImage ? '#10b981' : isText ? C.primary : '#94a3b8';
+                                const fileBg = isPdf
+                                    ? 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)'
+                                    : isImage
+                                    ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)'
+                                    : isText
+                                    ? `linear-gradient(135deg, ${C.tint} 0%, #bae6fd 100%)`
+                                    : 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)';
+                                const ext = file.originalFileName?.split('.').pop()?.toUpperCase() || 'FILE';
+
+                                return (
                                 <Paper
                                     key={file.id}
                                     elevation={0}
+                                    role="article"
+                                    aria-label={`Document: ${file.originalFileName}`}
                                     sx={{
-                                        borderRadius: 4,
+                                        borderRadius: 3,
                                         overflow: 'hidden',
-                                        border: '1px solid #e8edf2',
-                                        borderLeft: `4px solid ${
-                                            file.fileType?.includes('pdf') ? '#ef4444' :
-                                            file.fileType?.includes('image') ? '#10b981' :
-                                            file.fileType?.includes('text') ? C.primary : '#94a3b8'
-                                        }`,
-                                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                                        transition: 'all 0.2s ease',
+                                        border: `1px solid ${C.border}`,
+                                        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                                        transition: 'all 0.22s ease',
                                         '&:hover': {
-                                            boxShadow: `0 8px 24px ${C.shadowHover}`,
+                                            boxShadow: `0 10px 32px ${C.shadowHover}`,
                                             transform: 'translateY(-4px)',
+                                            borderColor: fileColor + '55',
+                                        },
+                                        '&:focus-within': {
+                                            outline: `2px solid ${C.primary}`,
+                                            outlineOffset: 2,
                                         },
                                         cursor: 'pointer',
+                                        display: 'flex',
+                                        flexDirection: 'column',
                                     }}
                                 >
+                                    {/* Thumbnail */}
                                     <Box
                                         onClick={() => handleOpenFile(file)}
+                                        tabIndex={0}
+                                        aria-label={`Open ${file.originalFileName}`}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleOpenFile(file)}
                                         sx={{
-                                            height: 200,
-                                            bgcolor: file.fileType?.includes('pdf') ? '#ffebee' :
-                                                file.fileType?.includes('image') ? '#e8f5e9' :
-                                                    file.fileType?.includes('text') ? '#e3f2fd' : '#f5f5f5',
-                                            background: file.fileType?.includes('pdf')
-                                                ? 'linear-gradient(135deg, #ffebee 0%, #fce4ec 100%)'
-                                                : file.fileType?.includes('image')
-                                                ? 'linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%)'
-                                                : file.fileType?.includes('text')
-                                                ? 'linear-gradient(135deg, #e3f2fd 0%, #e8eaf6 100%)'
-                                                : 'linear-gradient(135deg, #f5f5f5 0%, #fafafa 100%)',
+                                            height: 160,
+                                            background: fileBg,
                                             display: 'flex',
+                                            flexDirection: 'column',
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             position: 'relative',
+                                            gap: 1,
+                                            '&:focus': { outline: 'none' },
                                         }}
                                     >
-                                        {file.fileType?.includes('image')
-                                            ? <Image sx={{ fontSize: 52, color: '#10b981' }} />
-                                            : file.fileType?.includes('pdf')
-                                            ? <PictureAsPdf sx={{ fontSize: 52, color: '#ef4444' }} />
-                                            : file.fileType?.includes('text')
-                                            ? <Description sx={{ fontSize: 52, color: C.primary }} />
-                                            : <InsertDriveFile sx={{ fontSize: 52, color: '#94a3b8' }} />
-                                        }
+                                        {/* File type icon */}
+                                        <Box sx={{
+                                            width: 60, height: 60, borderRadius: 3,
+                                            bgcolor: 'white',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
+                                        }}>
+                                            {isImage
+                                                ? <Image sx={{ fontSize: 32, color: fileColor }} />
+                                                : isPdf
+                                                ? <PictureAsPdf sx={{ fontSize: 32, color: fileColor }} />
+                                                : isText
+                                                ? <Description sx={{ fontSize: 32, color: fileColor }} />
+                                                : <InsertDriveFile sx={{ fontSize: 32, color: fileColor }} />
+                                            }
+                                        </Box>
+                                        {/* Extension badge */}
+                                        <Box sx={{
+                                            bgcolor: fileColor, color: 'white',
+                                            px: 1.2, py: 0.2, borderRadius: 1,
+                                            fontSize: '0.65rem', fontWeight: 700, letterSpacing: 0.5,
+                                        }}>
+                                            {ext}
+                                        </Box>
+
+                                        {/* Shared badge */}
                                         {file.ownerEmail !== user?.email && (
-                                            <Chip
-                                                label="Shared"
-                                                size="small"
-                                                sx={{
-                                                    position: 'absolute',
-                                                    top: 12,
-                                                    right: 12,
-                                                    bgcolor: C.tint,
-                                                    color: C.primary,
-                                                    fontWeight: 600,
-                                                    fontSize: '0.7rem'
-                                                }}
-                                            />
+                                            <Chip label="Shared" size="small" sx={{
+                                                position: 'absolute', top: 10, left: 10,
+                                                bgcolor: 'white', color: C.primary,
+                                                fontWeight: 700, fontSize: '0.68rem', height: 22,
+                                                border: `1px solid ${C.primary}22`,
+                                                boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                                            }} />
                                         )}
+
+                                        {/* Hover quick-action overlay */}
+                                        <Box sx={{
+                                            position: 'absolute', inset: 0,
+                                            bgcolor: 'rgba(3,105,161,0.08)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1,
+                                            opacity: 0, transition: 'opacity 0.2s ease',
+                                            '&:hover': { opacity: 1 },
+                                        }}>
+                                            <IconButton
+                                                size="small" aria-label="Preview"
+                                                onClick={(e) => { e.stopPropagation(); handleOpenFile(file); }}
+                                                sx={{ bgcolor: 'white', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', '&:hover': { bgcolor: C.tint } }}
+                                            >
+                                                <Visibility sx={{ fontSize: 18, color: C.primary }} />
+                                            </IconButton>
+                                            <IconButton
+                                                size="small" aria-label="Download"
+                                                onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
+                                                sx={{ bgcolor: 'white', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', '&:hover': { bgcolor: C.tint } }}
+                                            >
+                                                <Download sx={{ fontSize: 18, color: C.primary }} />
+                                            </IconButton>
+                                        </Box>
                                     </Box>
 
-                                    <Box sx={{ p: 2 }}>
-                                        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
+                                    {/* Card body */}
+                                    <Box sx={{ p: 2, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 0.5 }}>
                                             <Typography
-                                                variant="subtitle1"
+                                                variant="subtitle2"
+                                                title={file.originalFileName}
                                                 sx={{
-                                                    fontWeight: 600,
-                                                    color: '#1d2129',
+                                                    fontWeight: 700,
+                                                    color: C.textPrimary,
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                     whiteSpace: 'nowrap',
                                                     flex: 1,
-                                                    mr: 1
+                                                    mr: 0.5,
+                                                    fontSize: '0.9rem',
                                                 }}
                                             >
                                                 {file.originalFileName}
                                             </Typography>
 
-                                            {/* Icon Buttons */}
-                                            <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                                {/* Expand/Collapse Button */}
+                                            {/* Actions */}
+                                            <Box sx={{ display: 'flex', gap: 0.3, flexShrink: 0 }}>
                                                 {(file.keywords?.length > 0 || file.summary) && (
                                                     <IconButton
                                                         size="small"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleFileExpand(file.id);
-                                                        }}
+                                                        aria-label={expandedFiles.has(file.id) ? 'Collapse details' : 'Expand details'}
+                                                        onClick={(e) => { e.stopPropagation(); toggleFileExpand(file.id); }}
                                                         sx={{
-                                                            bgcolor: '#f7f9fc',
                                                             color: C.primary,
                                                             transform: expandedFiles.has(file.id) ? 'rotate(180deg)' : 'rotate(0deg)',
-                                                            transition: 'transform 0.3s ease',
-                                                            '&:hover': {
-                                                                bgcolor: '#e8edf2',
-                                                                color: C.dark
-                                                            }
+                                                            transition: 'transform 0.25s ease',
+                                                            '&:hover': { bgcolor: C.tint },
                                                         }}
                                                     >
                                                         <ExpandMore fontSize="small" />
                                                     </IconButton>
                                                 )}
-
-                                                {/* 3-Dot Menu */}
                                                 <IconButton
                                                     size="small"
-                                                    sx={{
-                                                        bgcolor: '#f7f9fc',
-                                                        '&:hover': { bgcolor: '#e8edf2' }
-                                                    }}
+                                                    aria-label="More options"
+                                                    sx={{ color: C.textSecondary, '&:hover': { bgcolor: C.tint, color: C.primary } }}
                                                     onClick={(e) => handleMenuOpen(e, file)}
                                                 >
                                                     <MoreVert fontSize="small" />
@@ -1473,75 +1520,58 @@ const Dashboard = () => {
                                             </Box>
                                         </Box>
 
-                                        <Typography variant="caption" sx={{ color: '#6e7c87', display: 'block' }}>
-                                            {formatFileSize(file.fileSize)}
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ color: '#6e7c87' }}>
-                                            {new Date(file.uploadedAt).toLocaleDateString()}
-                                        </Typography>
-                                        {file.ownerEmail !== user?.email && (
-                                            <Typography variant="caption" sx={{ color: '#6e7c87', display: 'block', mt: 0.5 }}>
-                                                Owner: {file.ownerEmail}
+                                        {/* Metadata row */}
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                                            <Typography variant="caption" sx={{
+                                                color: 'white', bgcolor: fileColor, px: 1, py: 0.2,
+                                                borderRadius: 1, fontWeight: 600, fontSize: '0.68rem',
+                                            }}>
+                                                {formatFileSize(file.fileSize)}
                                             </Typography>
-                                        )}
+                                            <Typography variant="caption" sx={{ color: C.textSecondary, fontSize: '0.75rem' }}>
+                                                {new Date(file.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </Typography>
+                                            {file.ownerEmail !== user?.email && (
+                                                <Typography variant="caption" sx={{ color: C.textSecondary, fontSize: '0.72rem' }}>
+                                                    · {file.ownerEmail}
+                                                </Typography>
+                                            )}
+                                        </Box>
 
-                                        {/* Keywords - Only show when expanded */}
-                                        {expandedFiles.has(file.id) && file.keywords && file.keywords.length > 0 && (
-                                            <Box sx={{ mt: 1.5, pt: 1.5, borderTop: '1px solid #e8edf2', display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                                {file.keywords.slice(0, 3).map((keyword, idx) => (
-                                                    <Chip
-                                                        key={idx}
-                                                        label={keyword}
-                                                        size="small"
-                                                        sx={{
-                                                            bgcolor: C.tint,
-                                                            color: C.primary,
-                                                            fontWeight: 600,
-                                                            fontSize: '0.65rem',
-                                                            height: 20,
-                                                            '& .MuiChip-label': { px: 1 }
-                                                        }}
-                                                    />
+                                        {/* Expanded: Keywords */}
+                                        {expandedFiles.has(file.id) && file.keywords?.length > 0 && (
+                                            <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                {file.keywords.slice(0, 4).map((kw, idx) => (
+                                                    <Chip key={idx} label={kw} size="small" sx={{
+                                                        bgcolor: C.tint, color: C.primary,
+                                                        fontWeight: 600, fontSize: '0.65rem', height: 20,
+                                                        '& .MuiChip-label': { px: 1 }
+                                                    }} />
                                                 ))}
-                                                {file.keywords.length > 3 && (
-                                                    <Chip
-                                                        label={`+${file.keywords.length - 3}`}
-                                                        size="small"
-                                                        sx={{
-                                                            bgcolor: '#e8edf2',
-                                                            color: '#6e7c87',
-                                                            fontWeight: 600,
-                                                            fontSize: '0.65rem',
-                                                            height: 20,
-                                                            '& .MuiChip-label': { px: 1 }
-                                                        }}
-                                                    />
+                                                {file.keywords.length > 4 && (
+                                                    <Chip label={`+${file.keywords.length - 4}`} size="small" sx={{
+                                                        bgcolor: '#f1f5f9', color: C.textSecondary,
+                                                        fontWeight: 600, fontSize: '0.65rem', height: 20,
+                                                        '& .MuiChip-label': { px: 1 }
+                                                    }} />
                                                 )}
                                             </Box>
                                         )}
 
-                                        {/* Summary - Only show when expanded */}
+                                        {/* Expanded: Summary */}
                                         {expandedFiles.has(file.id) && file.summary && (
-                                            <Typography
-                                                variant="caption"
-                                                sx={{
-                                                    color: '#6e7c87',
-                                                    display: 'block',
-                                                    mt: 1,
-                                                    lineHeight: 1.4,
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    WebkitLineClamp: 2,
-                                                    WebkitBoxOrient: 'vertical',
-                                                }}
-                                            >
+                                            <Typography variant="caption" sx={{
+                                                color: C.textSecondary, display: '-webkit-box',
+                                                mt: 1, lineHeight: 1.5,
+                                                overflow: 'hidden', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
+                                            }}>
                                                 {file.summary}
                                             </Typography>
                                         )}
-
                                     </Box>
                                 </Paper>
-                            ))}
+                                );
+                            })}
                         </Box>
                     ) : (
                         <Paper
@@ -1613,7 +1643,7 @@ const Dashboard = () => {
                                         {/* Expand/Collapse Icon */}
                                         {(file.keywords?.length > 0 || file.summary) && (
                                             <IconButton
-                                                onClick={() => toggleFileExpand(file.id)}
+                                                onClick={(e) => { e.stopPropagation(); toggleFileExpand(file.id); }}
                                                 size="small"
                                                 sx={{
                                                     mr: 3,  // Increased from 2 to 3 for more space
