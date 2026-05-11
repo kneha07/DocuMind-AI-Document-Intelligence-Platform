@@ -22,36 +22,36 @@
 
 ## Demo Video
 
-https://github.com/user-attachments/assets/demo.mp4
+<video src="https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/demo.mp4" controls width="100%"></video>
 
-> 3-minute walkthrough covering login, dashboard, list view with AI keywords, semantic search, and the Ask AI chat panel.
+> **[▶ Download / Watch Demo](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/demo.mp4)** — 3-minute walkthrough covering login, dashboard, list view with AI keywords, semantic search, and the Ask AI chat panel.
 
 ---
 
 ## Screenshots
 
 ### Login
-![Login](Screenshots/login.png)
+![Login](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/login.png)
 *Split-screen login with DocuMind branding*
 
 ### Sign Up
-![Signup](Screenshots/signup.png)
+![Signup](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/signup.png)
 *Clean sign-up flow with first/last name, email and password*
 
 ### Dashboard — Grid View
-![Dashboard](Screenshots/dashboard-grid.png)
+![Dashboard](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/dashboard-grid.png)
 *Stats cards, filter dropdowns, and file cards with type badges and hover quick-actions (Preview + Download)*
 
 ### Dashboard — List View with AI Keywords & Summary
-![List View](Screenshots/list-view-expanded.png)
+![List View](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/list-view-expanded.png)
 *Auto-expanded list view showing AI-generated keywords and document summary per file*
 
 ### AI Semantic Search
-![AI Search](Screenshots/ai-search.png)
+![AI Search](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/ai-search.png)
 *Natural language search — "dog care nutrition feeding" semantically matches `general_dog_care.pdf` with keywords and summary shown*
 
 ### Ask AI Chat Panel
-![Ask AI](Screenshots/ask-ai-panel-response.png)
+![Ask AI](https://raw.githubusercontent.com/kneha07/DocuMind-AI-Document-Intelligence-Platform/main/Screenshots/ask-ai-panel-response.png)
 *Conversational AI panel powered by Claude/Gemini — live AI response identifying and summarizing the travel itinerary document*
 
 ---
