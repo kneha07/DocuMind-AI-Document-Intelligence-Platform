@@ -20,6 +20,14 @@
 
 ---
 
+## Demo Video
+
+https://github.com/user-attachments/assets/demo.mp4
+
+> 3-minute walkthrough covering login, dashboard, list view with AI keywords, semantic search, and the Ask AI chat panel.
+
+---
+
 ## Screenshots
 
 ### Login
@@ -43,8 +51,8 @@
 *Natural language search — "dog care nutrition feeding" semantically matches `general_dog_care.pdf` with keywords and summary shown*
 
 ### Ask AI Chat Panel
-![Ask AI](Screenshots/ask-ai-panel.png)
-*Conversational AI panel powered by Claude/Gemini — ask questions across all your documents*
+![Ask AI](Screenshots/ask-ai-panel-response.png)
+*Conversational AI panel powered by Claude/Gemini — live AI response identifying and summarizing the travel itinerary document*
 
 ---
 
@@ -383,7 +391,9 @@ DocuMind/
 │   ├── dashboard-grid.png
 │   ├── list-view-expanded.png
 │   ├── ai-search.png
-│   └── ask-ai-panel.png
+│   ├── ask-ai-panel.png
+│   ├── ask-ai-panel-response.png
+│   └── demo.mp4
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
