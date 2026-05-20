@@ -82,6 +82,12 @@ const Dashboard = () => {
     }, []);
 
     useEffect(() => {
+        if (!success) return;
+        const timer = setTimeout(() => setSuccess(''), 4000);
+        return () => clearTimeout(timer);
+    }, [success]);
+
+    useEffect(() => {
         if (searchQuery === '' && searchMode === 'ai') {
             loadFiles();
             setAiAnswer('');
