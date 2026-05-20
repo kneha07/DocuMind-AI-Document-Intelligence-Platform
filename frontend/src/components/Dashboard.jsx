@@ -94,6 +94,17 @@ const Dashboard = () => {
         }
     }, [searchQuery]);
 
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                document.querySelector('input[placeholder*="doc"], input[placeholder*="Find"]')?.focus();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
     // Auto-expand all in list view, collapse all in grid view
     useEffect(() => {
         if (viewMode === 'list') {
