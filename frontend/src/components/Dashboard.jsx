@@ -76,6 +76,7 @@ const Dashboard = () => {
     ]);
     const [chatInput, setChatInput] = useState('');
     const [chatLoading, setChatLoading] = useState(false);
+    const chatBottomRef = useRef(null);
 
     useEffect(() => {
         loadFiles();
@@ -93,6 +94,10 @@ const Dashboard = () => {
             setAiAnswer('');
         }
     }, [searchQuery]);
+
+    useEffect(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -1927,6 +1932,7 @@ const Dashboard = () => {
                                 </Box>
                             </Box>
                         )}
+                        <div ref={chatBottomRef} />
                     </Box>
 
                     {/* Input */}
