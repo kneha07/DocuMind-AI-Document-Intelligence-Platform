@@ -1584,6 +1584,14 @@ const Dashboard = () => {
                                                     · {file.ownerEmail}
                                                 </Typography>
                                             )}
+                                            {file.sharedWith?.length > 0 && file.ownerEmail === user?.email && (
+                                                <Chip
+                                                    icon={<PeopleAlt sx={{ fontSize: '12px !important' }} />}
+                                                    label={file.sharedWith.length}
+                                                    size="small"
+                                                    sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#f5f3ff', color: '#7c3aed', '& .MuiChip-label': { px: 0.7 } }}
+                                                />
+                                            )}
                                         </Box>
 
                                         {/* Expanded: Keywords */}
