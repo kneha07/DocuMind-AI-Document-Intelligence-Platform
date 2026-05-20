@@ -1168,6 +1168,7 @@ const Dashboard = () => {
                                 <MenuItem value="newest">Newest First</MenuItem>
                                 <MenuItem value="oldest">Oldest First</MenuItem>
                                 <MenuItem value="largest">Largest First</MenuItem>
+                                <MenuItem value="smallest">Smallest First</MenuItem>
                                 <MenuItem value="name">Name A–Z</MenuItem>
                             </Select>
                         </FormControl>
