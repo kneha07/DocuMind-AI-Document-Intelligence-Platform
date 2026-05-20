@@ -1180,6 +1180,21 @@ const Dashboard = () => {
                                 <MenuItem value="name">Name A–Z</MenuItem>
                             </Select>
                         </FormControl>
+                        {(fileTypeFilter !== 'all' || dateFilter !== 'all' || sortBy !== 'newest') && (
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => { setFileTypeFilter('all'); setDateFilter('all'); setSortBy('newest'); }}
+                                sx={{
+                                    borderRadius: 2, textTransform: 'none', fontWeight: 600,
+                                    borderColor: '#ef4444', color: '#ef4444',
+                                    '&:hover': { borderColor: '#dc2626', bgcolor: '#fff1f2' },
+                                    fontSize: '0.8rem', px: 1.5, height: 40,
+                                }}
+                            >
+                                Clear Filters
+                            </Button>
+                        )}
                     </Box>
 
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
