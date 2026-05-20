@@ -749,7 +749,7 @@ const Dashboard = () => {
                         />
                     </Box>
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.9)', fontWeight: 500 }}>
-                        {getTotalSize()} used · AES-256 encrypted
+                        {getTotalSize()} used · {Math.min(((files.reduce((acc, f) => acc + f.fileSize, 0) / 15000000000) * 100), 100).toFixed(1)}% of 15 GB
                     </Typography>
                 </Box>
             </Drawer>
