@@ -2050,7 +2050,11 @@ const Dashboard = () => {
             {/* Document Preview Dialog */}
             <Dialog
                 open={Boolean(previewFile)}
-                onClose={() => { setPreviewFile(null); setPreviewUrl(null); }}
+                onClose={() => {
+                    if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+                    setPreviewFile(null);
+                    setPreviewUrl(null);
+                }}
                 maxWidth="lg"
                 fullWidth
                 PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', height: '85vh' } }}
@@ -2077,7 +2081,7 @@ const Dashboard = () => {
                         >
                             Download
                         </Button>
-                        <IconButton size="small" onClick={() => { setPreviewFile(null); setPreviewUrl(null); }} sx={{ color: 'white' }}>
+                        <IconButton size="small" onClick={() => { if (previewUrl) window.URL.revokeObjectURL(previewUrl); setPreviewFile(null); setPreviewUrl(null); }} sx={{ color: 'white' }}>
                             <Delete sx={{ fontSize: 20 }} />
                         </IconButton>
                     </Box>
