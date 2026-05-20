@@ -433,6 +433,7 @@ const Dashboard = () => {
             );
 
             setSuccess(`File renamed to "${newFileName}".`);
+            addActivity('Renamed', `${oldName} → ${newFileName}`, 'rename');
         } catch (err) {
             setError('Failed to rename file');
         }
@@ -1273,13 +1274,14 @@ const Dashboard = () => {
                                         }}>
                                             <Box sx={{
                                                 width: 38, height: 38, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                                                bgcolor: item.icon === 'upload' ? '#dcfce7' : item.icon === 'delete' ? '#fee2e2' : item.icon === 'share' ? C.tint : '#f0f9ff',
+                                                bgcolor: item.icon === 'upload' ? '#dcfce7' : item.icon === 'delete' ? '#fee2e2' : item.icon === 'share' ? C.tint : item.icon === 'rename' ? '#fef3c7' : '#f0f9ff',
                                             }}>
                                                 {item.icon === 'upload' && <CloudUpload sx={{ fontSize: 18, color: '#16a34a' }} />}
                                                 {item.icon === 'delete' && <Delete sx={{ fontSize: 18, color: '#dc2626' }} />}
                                                 {item.icon === 'share' && <Share sx={{ fontSize: 18, color: C.primary }} />}
                                                 {item.icon === 'preview' && <Search sx={{ fontSize: 18, color: C.accent }} />}
                                                 {item.icon === 'download' && <Download sx={{ fontSize: 18, color: C.primary }} />}
+                                                {item.icon === 'rename' && <Edit sx={{ fontSize: 18, color: '#d97706' }} />}
                                             </Box>
                                             <Box sx={{ flex: 1, minWidth: 0 }}>
                                                 <Typography variant="body2" sx={{ fontWeight: 600, color: C.textPrimary }}>
