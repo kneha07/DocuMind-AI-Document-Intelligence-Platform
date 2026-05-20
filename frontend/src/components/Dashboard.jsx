@@ -1062,6 +1062,14 @@ const Dashboard = () => {
                                 iconBg: '#e0f2fe',
                                 accent: C.accent,
                             },
+                            {
+                                label: 'Shared With Me',
+                                value: files.filter(f => f.sharedWith?.includes(user?.email) && f.ownerEmail !== user?.email).length,
+                                sub: 'from collaborators',
+                                icon: <PeopleAlt sx={{ fontSize: 24, color: '#7c3aed' }} />,
+                                iconBg: '#f5f3ff',
+                                accent: '#7c3aed',
+                            },
                         ].map((card, i) => (
                             <Paper
                                 key={i}
