@@ -1902,9 +1902,21 @@ const Dashboard = () => {
                                 </Typography>
                             </Box>
                         </Box>
-                        <IconButton size="small" onClick={() => setChatOpen(false)} sx={{ color: 'white' }}>
-                            <ExpandMore sx={{ transform: 'rotate(-90deg)' }} />
-                        </IconButton>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            {chatMessages.length > 1 && (
+                                <IconButton
+                                    size="small"
+                                    title="Clear conversation"
+                                    onClick={() => setChatMessages([{ role: 'ai', text: 'Hi! Ask me anything about your documents.' }])}
+                                    sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
+                                >
+                                    <Delete sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            )}
+                            <IconButton size="small" onClick={() => setChatOpen(false)} sx={{ color: 'white' }}>
+                                <ExpandMore sx={{ transform: 'rotate(-90deg)' }} />
+                            </IconButton>
+                        </Box>
                     </Box>
 
                     {/* Messages */}
